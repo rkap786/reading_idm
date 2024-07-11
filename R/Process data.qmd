@@ -278,7 +278,8 @@ f_clean_for_embed= f_clean |> select(pdfname, PassNumUnq, Passage, QNoUnq,
                                      QuestionText, starts_with("Option"), pVal) |>
   select(-OptionAddInfo)
 
-write_csv(f_clean, "Data/data_passage_ques_options_pv.csv")
+write_csv(f_clean_for_embed, "Data/data_passage_ques_options_pv.csv")
+write_csv(f_clean, "Data/data_qual_data.csv")
 
 
 ```
