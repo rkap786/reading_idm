@@ -12,3 +12,7 @@ File name: data_qual_data.csv
 ### Cleaning data
 Raw file: Combined data_edit - Data_combined_edit.csv
 File for processing: R/Process data.qmd
+
+### BERT embeddings
+Generated from last layer + averaged across embedding length
+Generates embeddings for each sentence with d = 768
