@@ -1,0 +1,33 @@
+---
+title: "regression"
+format: html
+editor: visual
+---
+
+```{r}
+library(readr)
+library(tidyverse)
+library(dplyr)
+setwd("/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Code/reading_idm/")
+```
+
+You can add options to executable code like this
+
+```{r}
+f= read_csv("Data/data_passage_ques_options_pv.csv")
+f_ques_embed= read_csv("Data/question_embed.csv")
+f_option1_embed= read_csv("Data/option_embed1.csv")
+f_option2_embed= read_csv("Data/option_embed2.csv")
+f_option3_embed= read_csv("Data/option_embed3.csv")
+f_option4_embed= read_csv("Data/option_embed4.csv")
+names(f_ques_embed)= c("id",paste0("ques_embed", 1:769))
+names(f_option1_embed)= c("id",paste0("option1_embed", 1:769))
+names(f_option2_embed)= c("id",paste0("option2_embed", 1:769))
+names(f_option3_embed)= c("id",paste0("option3_embed", 1:769))
+names(f_option4_embed)= c("id",paste0("option4_embed", 1:769))
+
+f.with.embed= bind_cols(f,f_ques_embed)
+
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).

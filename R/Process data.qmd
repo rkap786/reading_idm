@@ -16,7 +16,7 @@ setwd("/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My D
 ```{r}
 # f1= read_csv("Data/Digitized items - Sheet1.csv")
 # f2= read_csv("Data/Digitized items_Om - Sheet1.csv")
-f= read.csv("Data/Combined data_edit - Data_combined_edit.csv")
+f= read_csv("Data/Combined data_edit - Data_combined_edit.csv")
 
 #f1= f1[,-1]
 # f2= f2[,-1]
@@ -44,7 +44,7 @@ names(f) = nm
 glimpse(f)
 
 
-f = f |> filter(ItemType=="multiple_choice")
+
 
 ```
 
@@ -84,9 +84,6 @@ f = f |>
 
 
 summary(f$pVal)
-## Drop rows that do not have pvalues 
-f |> filter(is.na(pVal)) |> pull(pdfname) |> unique()
-f = f |> filter(!is.na(pVal)) # NY 2021 is dropped
 ## Drop first 6 rows - duplicate data entry
 f= f[-c(1:6),]
 
@@ -132,36 +129,13 @@ f= left_join(f, fsubset)
 table(f$grade)
 table(f$year)
 
+## Remove questions that map to 2 passages
+table(f$PsgNum)
+f=f |> filter(!(PsgNum=="2, 3" | PsgNum=="3, 4" | PsgNum=="3 ,4"))
+table(f$PsgNum)
 ##Check - no NA
 # f |> filter(is.na(grade))
 # f |> filter(is.na(year))
-
-```
-
-## Descriptive stats
-
-```{r}
-
-## Check no duplicate for :2023-released-items-ela-g3
-n_distinct(f$PassNumUnq)
-n_distinct(f$QNoUnq)
-table1= data.frame(table(f$grade, f$year))
-library(gtsummary)
-
-tab2_3 <- f |> select(grade,year) %>%
-                      tbl_cross(row = grade,
-                                col = year,
-                                percent = "cell",
-                                missing = "no",
-                                label = year ~ "Year")
-tab2_3
-
-
-pvsummary= f |> group_by(pdfname) |> 
-  summarise(meanpv= mean(pVal), sd.pv=sd(pVal), min.pv=min(pVal), max.pv=max(pVal)) 
-
-summary(pvsummary$meanpv)
-summary(pvsummary$sd.pv)
 
 ```
 
@@ -205,9 +179,6 @@ f_passage$Passage= gsub('\"1.', '', f_passage$Passage)
 # f_passage$Passage=stringr::str_replace(f_passage$Passage, '\\*', '')
 # f_passage$Passage=stringr::str_replace(f_passage$Passage, '\\^[[:digit:]]', '')
 
-## Word count
-library(tidytext)
-f_passage$PassageWordCount.gen= lengths(strsplit(f_passage$Passage, "\\W+"))
 
 ## Number of paragraphs
 f_passage$numPara= str_count(f_passage$Passage, "\n")
@@ -219,38 +190,58 @@ f_passage$numPara= str_count(f_passage$Passage, "\n")
 ## Drop markers for bold, italitcs, footnotes, etc
 
 
+## Remove paragraph identifiers
+f_passage$Passage= gsub('\n', '', f_passage$Passage)
+f_passage$Passage= gsub('*', '', f_passage$Passage)
+f_passage$Passage= gsub('_', '', f_passage$Passage)
+f_passage$Passage= gsub('^[[:digit:]]+', '', f_passage$Passage)
+
+
+## Word count
+library(tidytext)
+f_passage$PassageWordCount.gen= lengths(strsplit(f_passage$Passage, "\\W+"))
 
 
 ```
 
-### Options and answers
+### Questions, Options and answers
 
 ```{r}
 
-f_options = f |> dplyr::select(pdfname, PassNumUnq, QNoUnq, QuestionText, contains("Option"))
-table(str_sub(f$QuestionText,1,2))
+f_options = f |> dplyr::select(pdfname, PassNumUnq, QNoUnq, QuestionText, 
+                               CorrectOption, contains("Option"), ItemType, pVal)
+
+f_options = f_options |> filter(ItemType=="multiple_choice")
+## Drop rows that do not have pvalues 
+f_options |> filter(is.na(pVal)) |> pull(pdfname) |> unique()
+f_options = f_options |> filter(!is.na(pVal)) # NY 2021 is dropped
+
+
+table(str_sub(f_options$QuestionText,1,2))
+f_options$QuestionNo = str_sub(f_options$QuestionText,1,2)
 f_options$QuestionText = str_sub(f_options$QuestionText,3,-1)
 
+table(str_sub(f_options$Option1,1,2))
+table(str_sub(f_options$Option2,1,2))
+table(str_sub(f_options$Option3,1,2))
+table(str_sub(f_options$Option4,1,2))
 
-table(str_sub(f$Option1,1,2))
-table(str_sub(f$Option2,1,2))
-table(str_sub(f$Option3,1,2))
-table(str_sub(f$Option4,1,2))
 
-f_options$firstwo= str_sub(f$Option1,1,2)
+## Edit Option remove first letters
+f_options$firstwo= str_sub(f_options$Option1,1,2)
 f_options$Option1 = if_else(f_options$firstwo %in% c("A", "F"), 
                             str_sub(f_options$Option1,2,-1), str_sub(f_options$Option1,3,-1)) 
 f_options$Option1 = if_else(str_sub(f_options$Option1,1,2) ==".",
                             str_sub(f_options$Option1,2,-1), f_options$Option1) 
 
-f_options$firstwo= str_sub(f$Option2,1,2)
+f_options$firstwo= str_sub(f_options$Option2,1,2)
 f_options$Option2 = if_else(f_options$firstwo %in% c("B", "G"), 
                             str_sub(f_options$Option2,2,-1), str_sub(f_options$Option2,3,-1)) 
-f_options$firstwo= str_sub(f$Option3,1,2)
+f_options$firstwo= str_sub(f_options$Option3,1,2)
 f_options$Option3 = if_else(f_options$firstwo %in% c("C", "H"), 
                             str_sub(f_options$Option3,2,-1), str_sub(f_options$Option3,3,-1)) 
 
-f_options$firstwo= str_sub(f$Option4,1,2)
+f_options$firstwo= str_sub(f_options$Option4,1,2)
 f_options$Option4 = if_else(f_options$firstwo %in% c("D", "J"), 
                             str_sub(f_options$Option4,2,-1), str_sub(f_options$Option4,3,-1)) 
 
@@ -260,6 +251,34 @@ table(str_sub(f_options$Option3,1,2))
 table(str_sub(f_options$Option4,1,2))
 f_options = f_options |> select(-firstwo)
 
+### Change from option1-4 to distractors
+f_options$option_correct_ans=rep("", nrow(f_options))
+f_options$option_distractor1= rep("", nrow(f_options))
+f_options$option_distractor2= rep("", nrow(f_options))
+f_options$option_distractor3= rep("", nrow(f_options))
+
+
+for (r in 1:nrow(f_options)) {
+  c=1
+for (i in 1:4) {
+  varname= paste0("Option",i)
+  if(i==f_options$CorrectOptionNum[r]) {
+    f_options$option_correct_ans[r] = f_options[[varname]][r]
+  }
+  if(i!=f_options$CorrectOptionNum[r]) {
+    varnamey= paste0("option_distractor",c)
+    f_options[[varnamey]][r] = f_options[[varname]][r]
+    c=c+1
+  }
+  
+  }
+}
+
+f_options= f_options |> select(-Option1, -Option2, -Option3, -Option4)
+f_options= f_options |> select(-CorrectOption)
+f_options= f_options|> group_by(pdfname, PassNumUnq) |>
+  mutate(n= n(), ques_order = 1:n) |> select(-n) |> ungroup()
+
 
 ```
 
@@ -267,19 +286,54 @@ f_options = f_options |> select(-firstwo)
 
 ```{r}
 
-f_clean= full_join(f_passage, f_options)
-f_pv = f |> select(pdfname, PassNumUnq, QNoUnq, pVal)
-f_clean= full_join(f_clean, f_pv)
+f_clean= inner_join(f_passage, f_options)
+#f_pv = f |> select(pdfname, PassNumUnq, QNoUnq, pVal)
+# anti_join(f_passage, f_options) |> View()
+#f_clean= inner_join(f_clean, f_pv)
 f_clean= f_clean |> filter(!is.na(pVal))
 
 n_distinct(f_clean$PassNumUnq)
 n_distinct(f_clean$QNoUnq)
 f_clean_for_embed= f_clean |> select(pdfname, PassNumUnq, Passage, QNoUnq, 
-                                     QuestionText, starts_with("Option"), pVal) |>
-  select(-OptionAddInfo)
+                                     QuestionText, starts_with("option"), pVal) 
+
 
 write_csv(f_clean_for_embed, "Data/data_passage_ques_options_pv.csv")
 write_csv(f_clean, "Data/data_qual_data.csv")
 
+write_csv(f_clean_for_embed,"/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Data/data_passage_ques_options_pv.csv")
+
 
 ```
+
+## Descriptive stats
+
+```{r}
+
+## Check no duplicate for :2023-released-items-ela-g3
+n_distinct(f$PassNumUnq)
+n_distinct(f$QNoUnq)
+table1= data.frame(table(f$grade, f$year))
+library(gtsummary)
+
+tab2_3 <- f |> select(grade,year) %>%
+                      tbl_cross(row = grade,
+                                col = year,
+                                percent = "cell",
+                                missing = "no",
+                                label = year ~ "Year")
+tab2_3
+
+
+pvsummary= f |> group_by(pdfname) |> 
+  summarise(meanpv= mean(pVal), sd.pv=sd(pVal), min.pv=min(pVal), max.pv=max(pVal)) 
+
+summary(pvsummary$meanpv)
+summary(pvsummary$sd.pv)
+
+###
+ 
+
+```
+
+### 
