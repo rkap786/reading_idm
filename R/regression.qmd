@@ -153,19 +153,15 @@ library(mlr)
 # Choose resampling strategy and define grid
 ptm <- proc.time()
 library(caret)
-tgrid <- expand.grid(
-   min.node.size = c(10, 20),
-  mtry = c(10, 50, 100, 200)
-)
 
 fit.rf= caret::train(x=x,
               y=y,
               method='ranger',
-              num.trees = 200,
-              trControl = fitControl,
-              tuneGrid = tgrid,
               num.trees = 100,
-              importance="permutation"
+              trControl = fitControl,
+              tuneLength = 15,
+              importance="permutation",
+              metric= "rmse"
 )
 
 # m.randomForest <- train(pVal ~ ., 
