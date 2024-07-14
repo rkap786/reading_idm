@@ -306,18 +306,21 @@ f_clean_for_embed$question_dis2= paste0(f_clean_for_embed$QuestionText,
 f_clean_for_embed$question_dis3= paste0(f_clean_for_embed$QuestionText, 
                                                f_clean_for_embed$option_distractor3)
 
-f_clean_for_embed$psg_question_correct_ans= paste0(f_clean_for_embed$Passage,
-                                                   f_clean_for_embed$QuestionText, 
-                                               f_clean_for_embed$option_correct_ans)
-f_clean_for_embed$psg_question_dis1= paste0(f_clean_for_embed$Passage,
+f_clean_for_embed$psg_question_correct_ans= paste0(f_clean_for_embed$option_correct_ans,
+                                                   f_clean_for_embed$QuestionText,
+                                                   f_clean_for_embed$Passage
+                                               )
+f_clean_for_embed$psg_question_dis1= paste0(
                                             f_clean_for_embed$QuestionText, 
-                                               f_clean_for_embed$option_distractor1)
-f_clean_for_embed$psg_question_dis2= paste0(f_clean_for_embed$Passage,
+                                            f_clean_for_embed$option_distractor1,
+                                            f_clean_for_embed$Passage)
+f_clean_for_embed$psg_question_dis2= paste0(
                                             f_clean_for_embed$QuestionText, 
-                                               f_clean_for_embed$option_distractor2)
-f_clean_for_embed$psg_question_dis3= paste0(f_clean_for_embed$Passage,
-                                            f_clean_for_embed$QuestionText, 
-                                               f_clean_for_embed$option_distractor3)
+                                            f_clean_for_embed$option_distractor2,
+                                            f_clean_for_embed$Passage)
+f_clean_for_embed$psg_question_dis3= paste0(f_clean_for_embed$QuestionText, 
+                                               f_clean_for_embed$option_distractor3,
+                                            f_clean_for_embed$Passage)
 
 write_csv(f_clean_for_embed, "Data/data_passage_ques_options_pv.csv")
 write_csv(f_clean, "Data/data_qual_data.csv")
