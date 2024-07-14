@@ -297,12 +297,34 @@ n_distinct(f_clean$QNoUnq)
 f_clean_for_embed= f_clean |> select(pdfname, PassNumUnq, Passage, QNoUnq, 
                                      QuestionText, starts_with("option"), pVal) 
 
+f_clean_for_embed$question_correct_ans= paste0(f_clean_for_embed$QuestionText, 
+                                               f_clean_for_embed$option_correct_ans)
+f_clean_for_embed$question_dis1= paste0(f_clean_for_embed$QuestionText, 
+                                               f_clean_for_embed$option_distractor1)
+f_clean_for_embed$question_dis2= paste0(f_clean_for_embed$QuestionText, 
+                                               f_clean_for_embed$option_distractor2)
+f_clean_for_embed$question_dis3= paste0(f_clean_for_embed$QuestionText, 
+                                               f_clean_for_embed$option_distractor3)
+
+f_clean_for_embed$psg_question_correct_ans= paste0(f_clean_for_embed$Passage,
+                                                   f_clean_for_embed$QuestionText, 
+                                               f_clean_for_embed$option_correct_ans)
+f_clean_for_embed$psg_question_dis1= paste0(f_clean_for_embed$Passage,
+                                            f_clean_for_embed$QuestionText, 
+                                               f_clean_for_embed$option_distractor1)
+f_clean_for_embed$psg_question_dis2= paste0(f_clean_for_embed$Passage,
+                                            f_clean_for_embed$QuestionText, 
+                                               f_clean_for_embed$option_distractor2)
+f_clean_for_embed$psg_question_dis3= paste0(f_clean_for_embed$Passage,
+                                            f_clean_for_embed$QuestionText, 
+                                               f_clean_for_embed$option_distractor3)
 
 write_csv(f_clean_for_embed, "Data/data_passage_ques_options_pv.csv")
 write_csv(f_clean, "Data/data_qual_data.csv")
 
 write_csv(f_clean_for_embed,"/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Data/data_passage_ques_options_pv.csv")
 
+write_csv(f_clean,"/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Data/data_qual_data.csv")
 
 ```
 

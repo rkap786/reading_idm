@@ -8,26 +8,210 @@ editor: visual
 library(readr)
 library(tidyverse)
 library(dplyr)
+library(caret)
+library(glmnet)
 setwd("/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Code/reading_idm/")
 ```
 
-You can add options to executable code like this
+Create file for analysis
 
 ```{r}
-f= read_csv("Data/data_passage_ques_options_pv.csv")
-f_ques_embed= read_csv("Data/question_embed.csv")
-f_option1_embed= read_csv("Data/option_embed1.csv")
-f_option2_embed= read_csv("Data/option_embed2.csv")
-f_option3_embed= read_csv("Data/option_embed3.csv")
-f_option4_embed= read_csv("Data/option_embed4.csv")
-names(f_ques_embed)= c("id",paste0("ques_embed", 1:769))
-names(f_option1_embed)= c("id",paste0("option1_embed", 1:769))
-names(f_option2_embed)= c("id",paste0("option2_embed", 1:769))
-names(f_option3_embed)= c("id",paste0("option3_embed", 1:769))
-names(f_option4_embed)= c("id",paste0("option4_embed", 1:769))
+f= read_csv("Data/data_qual_data.csv")
+f= f |> select(pVal, PassageWordCount.gen, numPara, CorrectOptionNum, ques_order)
 
-f.with.embed= bind_cols(f,f_ques_embed)
+## these cannot be continous numbers
+#f$ques_order= as.factor(f$ques_order)
+f$CorrectOptionNum= as.factor(f$CorrectOptionNum)
+
+f_correct_embed= read_csv("Data/question_embed_correct.csv")
+f_option1_embed= read_csv("Data/question_embed_dis1.csv")
+f_option2_embed= read_csv("Data/question_embed_dis2.csv")
+f_option3_embed= read_csv("Data/question_embed_dis3.csv")
+
+names(f_correct_embed)= c("id",paste0("correct_embed", 1:769))
+names(f_option1_embed)= c("id",paste0("dis1_embed", 1:769))
+names(f_option2_embed)= c("id",paste0("dis2_embed", 1:769))
+names(f_option3_embed)= c("id",paste0("dis3_embed", 1:769))
+#names(f_option4_embed)= c("id",paste0("option4_embed", 1:769))
+
+f.with.embed= bind_cols(f,f_correct_embed)
+f.with.embed= bind_cols(f.with.embed,f_option1_embed)
+f.with.embed= bind_cols(f.with.embed,f_option2_embed)
+f.with.embed= bind_cols(f.with.embed,f_option3_embed)
+#f.with.embed= bind_cols(f.with.embed,f_option4_embed)
+
+dim(f.with.embed)
+x=f.with.embed
+names(f.with.embed)
+f.with.embed= f.with.embed |> select(-starts_with("id"))
+
 
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+Turn average correct into easy, medium, hard buckets
+
+```{r}
+
+
+```
+
+```{r}
+set.seed(123)
+library(tidymodels)
+fsplit= f.with.embed |> initial_split(prop=0.8, strata = pVal)
+
+f.train= training(fsplit)
+f.test= testing(fsplit)
+nrow(f.train)
+nrow(f.test)
+
+x = model.matrix(pVal~., f.train)[,-1]
+y= f.train$pVal
+
+```
+
+### Regression model
+
+```{r}
+
+set.seed(123) 
+par(mfrow = c(1, 2))
+fit_ridge = glmnet(x, y, alpha = 0)
+plot(fit_ridge)
+plot(fit_ridge, xvar = "lambda", label = TRUE)
+fit_ridge_cv = cv.glmnet(x, y, alpha = 0)
+plot(fit_ridge_cv)
+mean((y - predict(fit_ridge_cv, x, s = "lambda.min")) ^ 2) #train error
+mean((y - predict(fit_ridge_cv, x)) ^ 2) #train error
+## Train RMSE
+sqrt(fit_ridge_cv$cvm[fit_ridge_cv$lambda == fit_ridge_cv$lambda.min])
+
+### LASSO
+fit_cv = cv.glmnet(x, y, alpha = 1)
+# fit_1se = glmnet(x, y, lambda = fit_cv$lambda.1se)
+# which(as.vector(as.matrix(fit_1se$beta)) != 0)
+# par(mfrow = c(1, 2))
+# plot(glmnet(x, y))
+# plot(glmnet(x, y), xvar = "lambda")
+fit_cv$lambda.min
+fit_cv$lambda.1se
+
+library(caret)
+cv_5 = trainControl(method = "cv", number = 5)
+# lasso_grid = expand.grid(alpha = 1, 
+#                          lambda = c(fit_cv$lambda.min, fit_cv$lambda.1se))
+
+fit_lasso = train(
+  pVal ~ ., data = f.train,
+  method = "glmnet",
+  trControl = cv_5, #tuneGrid = lasso_grid
+  tuneLength=10
+)
+
+get_best_result = function(caret_fit) {
+  best = which(rownames(caret_fit$results) == rownames(caret_fit$bestTune))
+  best_result = caret_fit$results[best, ]
+  rownames(best_result) = NULL
+  best_result
+}
+
+get_best_result(fit_lasso)
+yhat= predict(fit_lasso, newdata=f.test)
+Metrics::rmse(f.test$pVal,yhat)
+cor(f.test$pVal, yhat)
+
+
+```
+
+```{r}
+
+# pred1= predict(model1, newdata = f.test, type="response")
+# 
+# library(Metrics)
+# Metrics::rmse(f.test$pVal,pred1)
+# 
+# hist(pred1)
+# hist(f.test$pVal)
+# cor(f.test$pVal, pred1)
+
+
+```
+
+### Random forest
+
+```{r}
+library(caret)
+fitControl= trainControl(method= "cv", number=5)
+
+```
+
+```{r}
+ptm <- proc.time()
+library(ranger)
+library(mlr)
+
+# Choose resampling strategy and define grid
+ptm <- proc.time()
+library(caret)
+tgrid <- expand.grid(
+   min.node.size = c(10, 20),
+  mtry = c(10, 50, 100, 200)
+)
+
+fit.rf= caret::train(x=x,
+              y=y,
+              method='ranger',
+              num.trees = 200,
+              trControl = fitControl,
+              tuneGrid = tgrid,
+              num.trees = 100,
+              importance="permutation"
+)
+
+# m.randomForest <- train(pVal ~ ., 
+#                       data = f.train, 
+#                       method = "rf", 
+#                       trControl = fitControl,
+#                       na.action = na.omit,
+#                       trace = FALSE)
+
+rfpred= predict(m.randomForest, newdata=f.test)
+
+Metrics::rmse(f.test$pVal,pred1)
+
+hist(pred1)
+hist(f.test$pVal)
+cor(f.test$pVal, pred1)
+
+```
+
+## Neural net
+
+```{r}
+
+fitControl= trainControl(method="cv",number=5)
+tune.grid.neuralnet <- expand.grid(
+  layer1 = c(3, 10, 20),
+  layer2 = c(3,10,20),
+  layer3 = c(1)
+)
+m.NeuralNet <- train(pVal ~ ., 
+                      data = f.train, 
+                      method = "neuralnet", 
+                      trControl = fitControl,
+                     preProc = c("center", "scale"),
+                     metric = "RMSE",
+                      na.action = na.omit,
+                     tuneGrid=tune.grid.neuralnet
+                    )
+
+
+nnpred= predict(m.NeuralNet, newdata=f.test)
+
+Metrics::rmse(f.test$pVal,nnpred)
+
+hist(nnpred)
+hist(f.test$pVal)
+cor(f.test$pVal, nnpred)
+
+```
