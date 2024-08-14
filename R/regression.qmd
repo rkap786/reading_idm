@@ -17,29 +17,41 @@ Create file for analysis
 
 ```{r}
 f= read_csv("Data/data_qual_data.csv")
-f= f |> select(pVal, PassageWordCount.gen, numPara, CorrectOptionNum, ques_order)
+f= f |> select(pVal, PassageWordCount.gen, numPara, CorrectOptionNum, ques_order, 
+               numPara,BoxTextQuestion2)
+
 
 ## these cannot be continous numbers
 #f$ques_order= as.factor(f$ques_order)
-f$CorrectOptionNum= as.factor(f$CorrectOptionNum)
+#f$CorrectOptionNum= as.factor(f$CorrectOptionNum)
 
-f_correct_embed= read_csv("Data/question_embed_correct.csv")
-f_option1_embed= read_csv("Data/question_embed_dis1.csv")
-f_option2_embed= read_csv("Data/question_embed_dis2.csv")
-f_option3_embed= read_csv("Data/question_embed_dis3.csv")
+f_all_options= read_csv("Data/question_embed_alldistractors.csv")
+names(f_all_options)= c("id",paste0("correct_embed", 1:769))
+f.with.embed= bind_cols(f,f_all_options)
+f.with.embed= f.with.embed |> select(-starts_with("id"))
 
-names(f_correct_embed)= c("id",paste0("correct_embed", 1:769))
-names(f_option1_embed)= c("id",paste0("dis1_embed", 1:769))
-names(f_option2_embed)= c("id",paste0("dis2_embed", 1:769))
-names(f_option3_embed)= c("id",paste0("dis3_embed", 1:769))
-#names(f_option4_embed)= c("id",paste0("option4_embed", 1:769))
+f_cosine_diff= read_csv("Data/sim_corr_distractors_only.csv")
+names(f_cosine_diff)= c("diff_corr1","diff_corr2","diff_corr3")
+f.with.embed= bind_cols(f.with.embed,f_cosine_diff)
 
-f.with.embed= bind_cols(f,f_correct_embed)
-f.with.embed= bind_cols(f.with.embed,f_option1_embed)
-f.with.embed= bind_cols(f.with.embed,f_option2_embed)
-f.with.embed= bind_cols(f.with.embed,f_option3_embed)
-#f.with.embed= bind_cols(f.with.embed,f_option4_embed)
 
+# f_correct_embed= read_csv("Data/question_embed_correct.csv")
+# f_option1_embed= read_csv("Data/question_embed_dis1.csv")
+# f_option2_embed= read_csv("Data/question_embed_dis2.csv")
+# f_option3_embed= read_csv("Data/question_embed_dis3.csv")
+# 
+# names(f_correct_embed)= c("id",paste0("correct_embed", 1:769))
+# names(f_option1_embed)= c("id",paste0("dis1_embed", 1:769))
+# names(f_option2_embed)= c("id",paste0("dis2_embed", 1:769))
+# names(f_option3_embed)= c("id",paste0("dis3_embed", 1:769))
+# #names(f_option4_embed)= c("id",paste0("option4_embed", 1:769))
+# 
+# f.with.embed= bind_cols(f,f_correct_embed)
+# f.with.embed= bind_cols(f.with.embed,f_option1_embed)
+# f.with.embed= bind_cols(f.with.embed,f_option2_embed)
+# f.with.embed= bind_cols(f.with.embed,f_option3_embed)
+# #f.with.embed= bind_cols(f.with.embed,f_option4_embed)
+# 
 dim(f.with.embed)
 x=f.with.embed
 names(f.with.embed)
@@ -68,6 +80,24 @@ nrow(f.test)
 x = model.matrix(pVal~., f.train)[,-1]
 y= f.train$pVal
 
+x.test= model.matrix(pVal~., f.test)[,-1]
+
+### Without embeddings
+
+set.seed(123)
+library(tidymodels)
+fsplit2= f |> initial_split(prop=0.8, strata = pVal)
+
+f.train2= training(fsplit2)
+f.test2= testing(fsplit2)
+nrow(f.train2)
+nrow(f.test2)
+
+x2 = model.matrix(pVal~., f.train2)[,-1]
+y2= f.train2$pVal
+
+x.test2= model.matrix(pVal~., f.test2)[,-1]
+
 ```
 
 ### Regression model
@@ -75,37 +105,74 @@ y= f.train$pVal
 ```{r}
 
 set.seed(123) 
-par(mfrow = c(1, 2))
-fit_ridge = glmnet(x, y, alpha = 0)
-plot(fit_ridge)
-plot(fit_ridge, xvar = "lambda", label = TRUE)
-fit_ridge_cv = cv.glmnet(x, y, alpha = 0)
-plot(fit_ridge_cv)
+# par(mfrow = c(1, 2))
+# fit_ridge = glmnet(x, y, alpha = 0)
+# coef(fit_ridge)
+# 
+# ### ridge
+ridge.model <- glmnet(x, y, lambda = 0, alpha = 1, standardize = TRUE)
+round(coef(ridge.model),4)
+y.test_hat <- predict(ridge.model, x.test)
+Metrics::rmse(f.test$pVal,y.test_hat)
+cor(f.test$pVal,y.test_hat)
+
+
+# 
+fit_ridge_cv = cv.glmnet(x, y, alpha = 1, standardize = TRUE)
+fit_ridge_cv2 = cv.glmnet(x, y, alpha = 0.5, standardize = TRUE)
+# plot(fit_ridge_cv,main = "Ridge")
+sum(coef(fit_ridge_cv) != 0)
+yhat.ridge= predict(fit_ridge_cv, x.test)
+# 
+#plot(fit_ridge_cv)
 mean((y - predict(fit_ridge_cv, x, s = "lambda.min")) ^ 2) #train error
 mean((y - predict(fit_ridge_cv, x)) ^ 2) #train error
-## Train RMSE
+# ## Train RMSE
 sqrt(fit_ridge_cv$cvm[fit_ridge_cv$lambda == fit_ridge_cv$lambda.min])
+# 
+plot(f.test$pVal,yhat.ridge,col="#00000050",pch = 19,main = "Elastic net results",
+     ylab="Predicted difficulty", xlab= "True test difficulty",
+     xlim=c(0,1), ylim=c(0,1))
+abline(lm(yhat.ridge~f.test$pVal),lty = 2,lwd = 2,col = "gray")
+Metrics::rmse(f.test$pVal,yhat.ridge)
+cor(f.test$pVal,yhat.ridge)
+# 
+# 
+# ### LASSO
+# fit_cv = cv.glmnet(x, y, alpha = 1)
+# # fit_1se = glmnet(x, y, lambda = fit_cv$lambda.1se)
+# # which(as.vector(as.matrix(fit_1se$beta)) != 0)
+# # par(mfrow = c(1, 2))
+# # plot(glmnet(x, y))
+# # plot(glmnet(x, y), xvar = "lambda")
+# fit_cv$lambda.min
+# fit_cv$lambda.1se
+# sum(coef(fit_cv) != 0)
 
-### LASSO
-fit_cv = cv.glmnet(x, y, alpha = 1)
-# fit_1se = glmnet(x, y, lambda = fit_cv$lambda.1se)
-# which(as.vector(as.matrix(fit_1se$beta)) != 0)
-# par(mfrow = c(1, 2))
-# plot(glmnet(x, y))
-# plot(glmnet(x, y), xvar = "lambda")
-fit_cv$lambda.min
-fit_cv$lambda.1se
+
+
 
 library(caret)
 cv_5 = trainControl(method = "cv", number = 5)
-# lasso_grid = expand.grid(alpha = 1, 
-#                          lambda = c(fit_cv$lambda.min, fit_cv$lambda.1se))
+ # lasso_grid = expand.grid(alpha = 1, 
+ #                          lambda = c(fit_cv$lambda.min, fit_cv$lambda.1se))
 
-fit_lasso = train(
-  pVal ~ ., data = f.train,
+fit_enet = caret::train(
+  x=x,
+  y=y,
   method = "glmnet",
-  trControl = cv_5, #tuneGrid = lasso_grid
-  tuneLength=10
+  preProcess = c("center", "scale"),
+  trControl = cv_5
+)
+#alpha = 1 and lambda = 0.0184116
+
+fit_enet_bigger = caret::train(
+  x=x,
+  y=y,
+  method = "glmnet",
+  preProcess = c("center", "scale"),
+  tuneLength=10,
+  trControl = cv_5
 )
 
 get_best_result = function(caret_fit) {
@@ -114,12 +181,77 @@ get_best_result = function(caret_fit) {
   rownames(best_result) = NULL
   best_result
 }
+get_best_result(fit_enet_bigger)
+get_best_result(fit_enet)
+coef(fit_enet)
 
-get_best_result(fit_lasso)
-yhat= predict(fit_lasso, newdata=f.test)
+coef(fit_enet_bigger$finalModel,
+     fit_enet_bigger$bestTune$lambda)%>%head
+
+
+yhat= predict(fit_enet_bigger, newdata=f.test)
+yhat_fit_enet= predict(fit_enet, newdata=f.test)
+rmse=Metrics::rmse(f.test$pVal,yhat_fit_enet)
+Metrics::rmse(f.test$pVal,yhat_fit_enet)
 Metrics::rmse(f.test$pVal,yhat)
-cor(f.test$pVal, yhat)
+#MSE= mean((f.test$pVal - yhat)^2)
+cor(f.test$pVal,yhat_fit_enet)
+cor(f.test$pVal,yhat)
 
+
+# plot(f.test$pVal,yhat,col="#00000050",pch = 19,main = "Elastic net results",
+#      ylab="Predicted difficulty", xlab= "True test difficulty",
+#      xlim=c(0,1), ylim=c(0,1))
+# abline(lm(yhat~f.test$pVal),lty = 2,lwd = 2,col = "gray")
+
+# text(x = 0.2,y = 0.65,labels = paste0("MSE =", round(rmse,3)))
+# caption(expression(alpha, "=0.5"))
+
+
+
+
+```
+
+### No embeddings
+
+```{r}
+fit_enet = caret::train(
+  x=x2,
+  y=y2,
+  method = "glmnet",
+  preProcess = c("center", "scale"),
+  trControl = cv_5
+)
+#alpha = 1 and lambda = 0.0184116
+
+fit_enet_bigger = caret::train(
+  x=x2,
+  y=y2,
+  method = "glmnet",
+  tuneLength=10,
+  preProcess = c("center", "scale"),
+  trControl = cv_5
+)
+
+get_best_result = function(caret_fit) {
+  best = which(rownames(caret_fit$results) == rownames(caret_fit$bestTune))
+  best_result = caret_fit$results[best, ]
+  rownames(best_result) = NULL
+  best_result
+}
+get_best_result(fit_enet_bigger)
+get_best_result(fit_enet)
+coef(fit_enet)
+
+coef(fit_lasso$finalModel,
+     fit_lasso$bestTune$lambda)%>%head
+
+
+yhat2= predict(fit_enet_bigger, newdata=f.test2)
+rmse=Metrics::rmse(f.test2$pVal,yhat2)
+MSE= mean((f.test2$pVal - yhat2)^2)
+Rsquare <- cor(f.test2$pVal, yhat2)^2
+cor(f.test2$pVal, yhat2)
 
 ```
 
@@ -141,7 +273,7 @@ cor(f.test$pVal, yhat)
 
 ```{r}
 library(caret)
-fitControl= trainControl(method= "cv", number=5)
+fitControl= trainControl(method= "cv", number=5,classProbs = TRUE)
 
 ```
 
@@ -161,7 +293,7 @@ fit.rf= caret::train(x=x,
               trControl = fitControl,
               tuneLength = 15,
               importance="permutation",
-              metric= "rmse"
+              metric= "RMSE"
 )
 
 # m.randomForest <- train(pVal ~ ., 
@@ -171,13 +303,13 @@ fit.rf= caret::train(x=x,
 #                       na.action = na.omit,
 #                       trace = FALSE)
 
-rfpred= predict(m.randomForest, newdata=f.test)
+rfpred= predict(fit.rf, newdata=f.test,type="prob")
 
-Metrics::rmse(f.test$pVal,pred1)
+Metrics::rmse(f.test$pVal,rfpred)
 
 hist(pred1)
 hist(f.test$pVal)
-cor(f.test$pVal, pred1)
+cor(f.test$pVal, rfpred)
 
 ```
 
