@@ -89,10 +89,7 @@ f= f[-c(1:6),]
 
 
 
-
 ```
-
-### Grade, year, state
 
 ```{r}
 ## Create grade name and year
@@ -139,11 +136,6 @@ table(f$PsgNum)
 ##Check - no NA
 # f |> filter(is.na(grade))
 # f |> filter(is.na(year))
-
-## State name
-f$state= ifelse(str_detect(f$pdfname,"staar"), "Texas", "NY")
-
-
 
 ```
 
@@ -217,8 +209,7 @@ f_passage$PassageWordCount.gen= lengths(strsplit(f_passage$Passage, "\\W+"))
 ```{r}
 
 f_options = f |> dplyr::select(pdfname, PassNumUnq, QNoUnq, QuestionText, 
-                               CorrectOption, contains("Option"), ItemType, pVal,
-                               BoxTextQuestion)
+                               CorrectOption, contains("Option"), ItemType, pVal)
 
 f_options = f_options |> filter(ItemType=="multiple_choice")
 ## Drop rows that do not have pvalues 
@@ -291,16 +282,6 @@ f_options= f_options|> group_by(pdfname, PassNumUnq) |>
 
 ```
 
-### Other info
-
-```{r}
-
-##
-f$BoxTextQuestion2= ifelse(is.na(f$BoxTextQuestion) | is.na(f$BoxTextQuestion)=="",
-                          "No", "Yes")                
-
-```
-
 ### Merge files
 
 ```{r}
@@ -310,13 +291,11 @@ f_clean= inner_join(f_passage, f_options)
 # anti_join(f_passage, f_options) |> View()
 #f_clean= inner_join(f_clean, f_pv)
 f_clean= f_clean |> filter(!is.na(pVal))
-f_other_vars=f |> select(PassNumUnq, year, grade, state)
 
 n_distinct(f_clean$PassNumUnq)
 n_distinct(f_clean$QNoUnq)
 f_clean_for_embed= f_clean |> select(pdfname, PassNumUnq, Passage, QNoUnq, 
-                                     QuestionText, starts_with("option"), pVal
-                                     ) 
+                                     QuestionText, starts_with("option"), pVal) 
 
 f_clean_for_embed$question_correct_ans= paste0(f_clean_for_embed$QuestionText, 
                                                f_clean_for_embed$option_correct_ans)
@@ -325,13 +304,6 @@ f_clean_for_embed$question_dis1= paste0(f_clean_for_embed$QuestionText,
 f_clean_for_embed$question_dis2= paste0(f_clean_for_embed$QuestionText, 
                                                f_clean_for_embed$option_distractor2)
 f_clean_for_embed$question_dis3= paste0(f_clean_for_embed$QuestionText, 
-                                               f_clean_for_embed$option_distractor3)
-
-
-f_clean_for_embed$distractors= paste0(f_clean_for_embed$QuestionText, 
-                                      f_clean_for_embed$option_correct_ans,
-                                      f_clean_for_embed$option_distractor1,
-                                      f_clean_for_embed$option_distractor2,
                                                f_clean_for_embed$option_distractor3)
 
 f_clean_for_embed$psg_question_correct_ans= paste0(f_clean_for_embed$option_correct_ans,
@@ -349,8 +321,6 @@ f_clean_for_embed$psg_question_dis2= paste0(
 f_clean_for_embed$psg_question_dis3= paste0(f_clean_for_embed$QuestionText, 
                                                f_clean_for_embed$option_distractor3,
                                             f_clean_for_embed$Passage)
-
-
 
 write_csv(f_clean_for_embed, "Data/data_passage_ques_options_pv.csv")
 write_csv(f_clean, "Data/data_qual_data.csv")
