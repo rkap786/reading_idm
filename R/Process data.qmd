@@ -91,6 +91,8 @@ f= f[-c(1:6),]
 
 ```
 
+### Create grade, year, state variables
+
 ```{r}
 ## Create grade name and year
 
@@ -129,10 +131,17 @@ f= left_join(f, fsubset)
 table(f$grade)
 table(f$year)
 
+## Add state
+f= f |> mutate(state=if_else(str_detect(pdfname, "released-items"), "NY", "Texas"))
+
 ## Remove questions that map to 2 passages
 table(f$PsgNum)
 f=f |> filter(!(PsgNum=="2, 3" | PsgNum=="3, 4" | PsgNum=="3 ,4"))
 table(f$PsgNum)
+
+
+write_csv(f,"Data/Datacombined_clean.csv")
+
 ##Check - no NA
 # f |> filter(is.na(grade))
 # f |> filter(is.na(year))
@@ -141,26 +150,59 @@ table(f$PsgNum)
 
 ### Passage description
 
+
 ```{r}
 f_passage = f |> filter(!is.na(Passage), Passage!="")  |>
-  select(pdfname, PassNumUnq, Passage, PassageWordCount, PassageLexile, PassageFK, BoxTextPassage, FootnoteYN)
+  dplyr::select(pdfname, PassNumUnq, Passage, PassageWordCount, PassageLexile, PassageFK, BoxTextPassage, BoxTextQuestion, FootnoteYN)
 
 
 n_distinct(f_passage$Passage)
 n_distinct(f_passage$PassNumUnq)
 
-## Identify use of line numbers 
-## All passages have line numbers, no useful variation
-sum(str_detect(f_passage$Passage,'\n[[:digit:]]+'))
-nrow(f_passage)
-f_passage$linenums = if_else(str_detect(f_passage$Passage,'\n[[:digit:]]+'), "Yes", "No")
-f_passage$linenums = if_else(str_detect(f_passage$Passage,'\n [[:digit:]]+'), "Yes", f_passage$linenums)
-f_passage$linenums = if_else(str_detect(f_passage$Passage,'\n  [[:digit:]]+'), "Yes", f_passage$linenums)
-f_passage = f_passage |> select(-linenums) 
+### Add variables for use of text highlights (bold, italics, footnotes) in passages
+f_passage= f_passage |> 
+  mutate(pass_text_bold_yn= if_else(str_detect(Passage, "\\*"),1,0),
+         pass_text_italics_yn= if_else(str_detect(Passage, "\\_"),1,0),
+         pass_text_fn_yn= if_else(str_detect(Passage, "\\^"),1,0),
+         pass_highlight_yn= if_else(pass_text_bold_yn==1 | pass_text_italics_yn==1 | pass_text_fn_yn==1, 1, 0)
+         )
 
-# 
-# f_passage |> filter(linenums=="No") |>
-#   pull(Passage) |> head()
+table(f_passage$pass_text_bold_yn)
+table(f_passage$pass_text_italics_yn)
+table(f_passage$pass_text_fn_yn)
+
+
+## Drop highlights from passage
+f_passage$Passage= gsub('\\*', '', f_passage$Passage)
+f_passage$Passage= gsub('\\_', '', f_passage$Passage)
+f_passage$Passage= gsub('\\^[[:digit:]]+', '', f_passage$Passage)
+
+sum(str_detect(f_passage$Passage,'\\^'))
+sum(str_detect(f_passage$Passage,'\\*'))
+sum(str_detect(f_passage$Passage,'\\_'))
+sum(str_detect(f_passage$Passage,'\\^[[:digit:]]+'))
+
+## check footnote number
+f_passage$FootnoteYN_binary= if_else(is.na(f_passage$FootnoteYN),0,1)
+#which((f_passage$FootnoteYN_binary!=f_passage$pass_text_fn_yn)==TRUE)
+#f_passage$Passage[f_passage$FootnoteYN_binary!=f_passage$pass_text_fn_yn]
+f_passage = f_passage |> dplyr::select(-FootnoteYN_binary) #we dont need both 
+
+## Identify use of line numbers 
+
+## All passages have line numbers, no useful variation
+sum(str_detect(f_passage$Passage,'\n[[:digit:]]+') | 
+      str_detect(f_passage$Passage,'\n [[:digit:]]+') |
+      str_detect(f_passage$Passage,'\n  [[:digit:]]+')
+      )
+nrow(f_passage)
+
+f_passage$linenums = if_else(str_detect(f_passage$Passage,'\n[[:digit:]]+'), 1, 2)
+f_passage$linenums = if_else(str_detect(f_passage$Passage,'\n [[:digit:]]+'), 1, f_passage$linenums)
+f_passage$linenums = if_else(str_detect(f_passage$Passage,'\n  [[:digit:]]+'), 1, f_passage$linenums)
+table(f_passage$linenums)
+
+f_passage = f_passage |> dplyr::select(-linenums) 
 
 ## Drop numbers. from passages
 f_passage$Passage= gsub('\n[[:digit:]]+', '', f_passage$Passage)
@@ -169,7 +211,7 @@ f_passage$Passage= gsub('\n  [[:digit:]]+', '', f_passage$Passage)
 f_passage$Passage= gsub('\"1.', '', f_passage$Passage)
 
 
-
+ 
 #f_passage$Passage= gsub('[[:digit:]]+', '', f_passage$Passage)
 
 # str1= f_passage$Passage[1]
@@ -200,8 +242,27 @@ f_passage$Passage= gsub('^[[:digit:]]+', '', f_passage$Passage)
 ## Word count
 library(tidytext)
 f_passage$PassageWordCount.gen= lengths(strsplit(f_passage$Passage, "\\W+"))
+write_csv(f_passage,"Data/Datacombined_clean_passages.csv")
 
 
+```
+
+
+Readability from Python
+
+Note to self: check why 3 points have different word length
+
+```{r}
+f_passage= read_csv("Data/Datacombined_clean_passages_fk.csv")
+f_passage=f_passage[,-1]
+plot(f_passage$PassageFK, f_passage$fk)
+cor(f_passage[,c("PassageFK","fk")],use = "complete.obs") 
+plot(f_passage$PassageWordCount, f_passage$passage_len)
+
+f_passage$FootnoteYNbinary= if_else(is.na(f_passage$FootnoteYN),0,1)
+f_passage= f_passage |> dplyr::select(-PassageWordCount, -PassageFK, 
+                                      -PassageWordCount.gen, -PassageLexile)
+glimpse(f_passage)
 ```
 
 ### Questions, Options and answers
@@ -215,6 +276,8 @@ f_options = f_options |> filter(ItemType=="multiple_choice")
 ## Drop rows that do not have pvalues 
 f_options |> filter(is.na(pVal)) |> pull(pdfname) |> unique()
 f_options = f_options |> filter(!is.na(pVal)) # NY 2021 is dropped
+
+
 
 
 table(str_sub(f_options$QuestionText,1,2))
@@ -249,7 +312,7 @@ table(str_sub(f_options$Option1,1,2))
 table(str_sub(f_options$Option2,1,2))
 table(str_sub(f_options$Option3,1,2))
 table(str_sub(f_options$Option4,1,2))
-f_options = f_options |> select(-firstwo)
+f_options = f_options |> dplyr::select(-firstwo)
 
 ### Change from option1-4 to distractors
 f_options$option_correct_ans=rep("", nrow(f_options))
@@ -274,10 +337,10 @@ for (i in 1:4) {
   }
 }
 
-f_options= f_options |> select(-Option1, -Option2, -Option3, -Option4)
-f_options= f_options |> select(-CorrectOption)
+f_options= f_options |> dplyr::select(-Option1, -Option2, -Option3, -Option4)
+f_options= f_options |> dplyr::select(-CorrectOption)
 f_options= f_options|> group_by(pdfname, PassNumUnq) |>
-  mutate(n= n(), ques_order = 1:n) |> select(-n) |> ungroup()
+  mutate(n= n(), ques_order = 1:n) |> dplyr::select(-n) |> ungroup()
 
 
 ```
@@ -291,11 +354,16 @@ f_clean= inner_join(f_passage, f_options)
 # anti_join(f_passage, f_options) |> View()
 #f_clean= inner_join(f_clean, f_pv)
 f_clean= f_clean |> filter(!is.na(pVal))
+names(f)
+f_desc= f |> dplyr::select(pdfname, PassNumUnq, QNoUnq, year, grade, state)
+f_clean= inner_join(f_clean, f_desc)
 
 n_distinct(f_clean$PassNumUnq)
 n_distinct(f_clean$QNoUnq)
-f_clean_for_embed= f_clean |> select(pdfname, PassNumUnq, Passage, QNoUnq, 
-                                     QuestionText, starts_with("option"), pVal) 
+f_clean_for_embed= f_clean |> dplyr::select(pdfname, PassNumUnq, Passage, QNoUnq, 
+                                     QuestionText, starts_with("option"), pVal, 
+                                     year, grade, fk, passage_len,numPara,
+                                     -OptionAddInfo,-FootnoteYN) 
 
 f_clean_for_embed$question_correct_ans= paste0(f_clean_for_embed$QuestionText, 
                                                f_clean_for_embed$option_correct_ans)
@@ -322,12 +390,14 @@ f_clean_for_embed$psg_question_dis3= paste0(f_clean_for_embed$QuestionText,
                                                f_clean_for_embed$option_distractor3,
                                             f_clean_for_embed$Passage)
 
+
+
 write_csv(f_clean_for_embed, "Data/data_passage_ques_options_pv.csv")
-write_csv(f_clean, "Data/data_qual_data.csv")
+write_csv(f_clean, "Data/data_qual_info.csv")
 
-write_csv(f_clean_for_embed,"/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Data/data_passage_ques_options_pv.csv")
+#write_csv(f_clean_for_embed,"/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Data/data_passage_ques_options_pv.csv")
 
-write_csv(f_clean,"/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Data/data_qual_data.csv")
+#write_csv(f_clean,"/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Data/data_qual_info.csv")
 
 ```
 
@@ -341,7 +411,7 @@ n_distinct(f$QNoUnq)
 table1= data.frame(table(f$grade, f$year))
 library(gtsummary)
 
-tab2_3 <- f |> select(grade,year) %>%
+tab2_3 <- f |> dplyr::select(grade,year) %>%
                       tbl_cross(row = grade,
                                 col = year,
                                 percent = "cell",
