@@ -1,20 +1,28 @@
 from datasets import load_dataset, Dataset
-from embed_text_package.embed_text import Embedder
+from embed_text_package.embed_text_v2 import Embedder
 from torch.utils.data import DataLoader
 import itertools
 import pickle
+import torch
 
-ds = load_dataset("stair-lab/questioin_difficulty", split="train")
+ds = load_dataset("domingue-lab/question_difficulty", split="train")
 model = "meta-llama/Llama-3.1-8B"
+num_gpu =  4
 
 if __name__ == "__main__":
     embedder = Embedder()
-    embedder.load(model)
+    embedder.load(
+	model,
+        tensor_parallel_size=num_gpu,
+    	enable_chunked_prefill=False,
+    	enforce_eager=True,
+	dtype=torch.float16
+    )
     list_text = []
     list_score = []
-    
+
     # ds = Dataset.from_dict(ds[:10])
-    
+
     for sample in ds:
         answer = [
             "Correct answer: " + sample["option_correct_ans"],
@@ -38,7 +46,7 @@ if __name__ == "__main__":
     combine_ds = Dataset.from_dict({"text": list_text})
     ds_emb = (
         embedder.get_embeddings(
-            DataLoader(combine_ds, batch_size=8),
+            DataLoader(combine_ds, batch_size=1),
             embedder.which_model,
             ["text"],
         )
