@@ -46,7 +46,7 @@ if __name__ == "__main__":
     combine_ds = Dataset.from_dict({"text": list_text})
     ds_emb = (
         embedder.get_embeddings(
-            DataLoader(combine_ds, batch_size=1),
+            DataLoader(combine_ds, batch_size=8),
             embedder.which_model,
             ["text"],
         )
