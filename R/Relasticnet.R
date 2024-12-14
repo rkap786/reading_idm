@@ -14,27 +14,24 @@ fnc_reg_elasticNet= function(f, vars.select, alpha=0) {
   
   train= training(fsplit)
   test= testing(fsplit)
-  dim(f.train)
-  dim(f.test)
+  # dim(f.train)
+  # dim(f.test)
 
   #cv_control=trainControl("cv", number = 10)
-  # seeds <- vector(mode = "list", length = 11)
-  # for(i in 1:50) seeds[[i]] <- sample.int(1000, 1)
-
+  seeds <- vector(mode = "list", length = 11)
+  for(i in 1:11) seeds[[i]] <- 123+i
   
   cv_control <- trainControl(
     method = "cv",
     number = 10,
-    seeds=NULL
+    seeds=seeds
   )
     
   ridge.model.sparse <- caret::train(pVal~.,
                                      method='glmnet',
                                      family="gaussian",
                                      data= train,
-                                     trControl = trainControl(
-                                       method = "cv",
-                                       number = 10),
+                                     trControl = cv_control,
                                      tuneGrid = expand.grid(alpha = alpha, lambda = lambda), #alpha=0 means Ridge, 1=Lasso
                                      preProcess = c('center', 'scale')
   )
