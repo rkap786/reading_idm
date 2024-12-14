@@ -2,6 +2,7 @@
 library(shiny)
 library(jsonlite)  # For JSON conversion
 library(reticulate) # For calling Python scripts
+setwd('/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Code/reading_idm/R/shiny')
 
 # Use the system's Python executable or configure Python path
 use_python("/usr/bin/python3")  # Adjust to your Python path if needed
@@ -45,6 +46,11 @@ call_python_script <- function(passage, question, distractors) {
   
   # Convert the comma-separated string back into a numeric vector
   embedding <- as.numeric(unlist(strsplit(result, ",")))
+  
+  
+  # Print the embedding for debugging
+  cat("Generated Embedding: \n", embedding, "\n")
+  
   return(embedding)
 }
 

@@ -45,6 +45,9 @@ def main():
     distractors = inputs.get("Distractors", "")
     combined_input = [f"{question} {passage} {distractors}"]  # List of one sentence
 
+     #Print input data
+    print(f"Received input: {combined_input}")
+    
     # Step 3: Generate BERT embeddings
     try:
         embedding = vectorize_with_pretrained_embeddings(combined_input)  # Shape: 1x768
