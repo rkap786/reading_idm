@@ -1,0 +1,829 @@
+---
+title: "regression"
+format: html
+editor: visual
+---
+
+```{r}
+library(readr)
+library(tidyverse)
+library(dplyr)
+library(caret)
+library(glmnet)
+setwd("/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/")
+source("Code/reading_idm/R/getAbility.R")
+source("Code/reading_idm/R/Relasticnet.R")
+
+```
+
+
+### Data processing
+
+Create file for analysis, fix p-values
+
+```{r}
+
+#setwd("G:/My Drive/0. Projects - Stanford/Item generation")
+f= read_csv("Data/Data/Processed/data_qual_info.csv")
+# glimpse(f)
+
+f= f |> dplyr::select(-pdfname,-starts_with("PerOption"), 
+                      -CorrectOptionNum,
+                      -QuestionNo) #-DESWC
+f= f |> mutate(pVal= ifelse(pVal==0, pVal+0.001, pVal))
+
+f.names = names(f)
+
+vars.yn= f.names[grepl("yn", f.names)]
+for (vars in c(vars.yn, "year")) {
+  f[[vars]]= as.factor(f[[vars]])
+}
+
+f =f |>
+  select(-pass_text_underline_yn,-pass_text_italics_yn,
+                        -pass_text_bold_yn, -pass_text_fn_yn,-numPara,  -Passage, -starts_with("option_"), -QuestionText)
+
+
+#f= f |> na.omit()
+```
+
+
+
+#### pvalue IRT coming from NWEA for NY and Texas for Texas 
+
+```{r}
+
+### Scales
+tx_ability=c(1467, 1552, 1592, 1634, 1669, 1698) #meets grade level performance
+nwea_ny_ability=c(200.74, 204.83, 210.98, 215.36, 216.81, 220.93)
+#vg= c(0, 0.6921, 0.6641, 1.4135, 1.2939, 1.9002)
+grlist=sort(unique(f$grade))
+nwea_ny_ability= (nwea_ny_ability-200)/10 ## following scale conversion
+tx_ability = (tx_ability-1398.5930)/143.7195
+
+
+
+### Get pval IRT directly for each item
+
+nwea.ability.mat= data.frame(bind_cols(grade=grlist, state=rep("NY", 6),ability=nwea_ny_ability))
+tx_ability_mat= data.frame(bind_cols(grade=grlist, state=rep("Texas", 6),ability=tx_ability)) 
+ability.mat= bind_rows(nwea.ability.mat,tx_ability_mat)
+names(f)
+#f= f |> select(-pVal.irt, -nwea.ability)
+f= left_join(f, ability.mat)
+f$pVal.irt = getlogitdiff(pv=f$pVal, th.scale = f$ability)
+
+f= f |> dplyr::select(-ability)
+#
+
+#### Get constant pval
+
+### Convert ability to theta
+ny.adj.mat= getlineardiff(nwea_ny_ability,f, state="NY", start=0.3, end=0.7)
+tx.adj.mat= getlineardiff(tx_ability,f, state="Texas", start=0.3, end=0.7)
+adj.states = bind_rows(ny.adj.mat, tx.adj.mat)
+
+f= left_join(f, adj.states)
+f$pVal.cons= f$pVal - f$mean.pv
+f =f |> dplyr::select(-mean.pv)
+
+f= f |> rename(pVal.unadj= pVal)
+f= f |> na.omit()
+
+```
+
+```{r}
+
+```{r}
+
+
+
+g1= f |> dplyr::select(grade, starts_with("pVal")) |>
+  ggplot(aes(grade, pVal.irt, fill=factor(grade), color=factor(grade))) + geom_boxplot(alpha=0.3) +
+  scale_fill_brewer(palette = "RdBu") + 
+  labs(x= "", y= "pValue adjusted to logit scale") + 
+  theme_classic() +
+  theme(legend.position = "bottom", legend.title=element_blank())
+
+g2= f |> dplyr::select(grade, starts_with("pVal")) |>
+  ggplot(aes(grade, pVal.cons, fill=factor(grade), color=factor(grade))) + geom_boxplot(alpha=0.3) +
+  scale_fill_brewer(palette = "RdBu") + 
+  labs(x= "", y= "pValue adjusted between 0.3 & 0.7") + 
+  theme_classic() +
+  theme(legend.position = "bottom", legend.title=element_blank())
+
+g3= f |> dplyr::select(grade, starts_with("pVal")) |>
+  ggplot(aes(grade, pVal.unadj, fill=factor(grade), color=factor(grade))) + geom_boxplot(alpha=0.3) +
+  scale_fill_brewer(palette = "RdBu") + 
+  labs(x= "", y= "pValue unadjusted") + 
+  theme_classic() +
+  theme(legend.position = "bottom", legend.title=element_blank())
+
+library(ggpubr)
+g= ggarrange(g3, g2, g1, nrow=1, common.legend = TRUE, align = "hv")
+ggsave("Code/reading_idm/R/plots/pvalbygrade.png", g, width = 14, height = 8)
+# 
+# f |> group_by(grade) |>
+#   summarise(meanfk= mean(fk, na.rm=T)) 
+
+
+```
+
+
+```
+
+
+### Add  embeddings
+Merge with embeddings
+
+```{r}
+
+
+
+# ### PCA embeddings
+embed.bert= read_csv("Data/Embeddings/question_alldistractors_embed.csv")
+names(embed.bert)= c("id",paste0("embed.bert", 1:768), "PassNumUnq", "QNoUnq")
+embed.bert = embed.bert |> select(-id)
+
+#f.with.embed= merge(f,embed.bert)
+
+### PCA embeddings
+#embed= f.with.embed |> dplyr::select(starts_with("embed"))
+f_all_options=embed.bert |> select(-PassNumUnq, -QNoUnq)
+pca_embeddings_80= getpc(f_all_options)
+vars.embed.pca= names(pca_embeddings_80)
+pca_embeddings_80['PassNumUnq']=embed.bert$PassNumUnq
+pca_embeddings_80['QNoUnq']=embed.bert$QNoUnq
+
+#f.with.embed= left_join(f.with.embed,pca_embeddings_80)
+
+
+
+#### Without passage
+
+f.embed.correct= read_csv("Data/Embeddings/option_embed_correct_tag.csv")
+names(f.embed.correct)= c("id",paste0("embed.ques.cor", 1:768))
+
+f.embed.optionembed1.tag= read_csv("Data/Embeddings/optionembed1_tag.csv")
+names(f.embed.optionembed1.tag)= c("id",paste0("embed.ques.dis1", 1:768))
+
+f.embed.optionembed2.tag= read_csv("Data/Embeddings/optionembed2_tag.csv")
+names(f.embed.optionembed2.tag)= c("id",paste0("embed.ques.dis2", 1:768))
+
+f.embed.optionembed3.tag= read_csv("Data/Embeddings/optionembed3_tag.csv")
+names(f.embed.optionembed3.tag)= c("id",paste0("embed.ques.dis3", 1:768))
+
+
+f.embed.merged.tag = bind_cols(f.embed.correct, f.embed.optionembed1.tag, f.embed.optionembed2.tag, f.embed.optionembed3.tag) |> 
+  as.data.frame() |>
+  select(-contains("id"))
+
+nc=ncol(f.embed.merged.tag)
+names(f.embed.merged.tag)= c(paste0("embed.bert", 1:(nc)))
+
+
+
+
+#f.embed.merged.tag= bind_cols(f.embed.merged.tag,pca_embeddings_80)
+
+
+#f.embed.merged.tag= left_join(f,f.embed.merged.tag)
+
+### Alternate PCA embeddings
+pca_embeddings_80_tag= getpc(f.embed.merged.tag)
+vars.embed.pca.tag= names(pca_embeddings_80_tag)
+
+## Get IDs
+embed.bert.id= read_csv("Data/Embeddings/question_alldistractors_embed.csv")
+names(embed.bert.id)= c("id",paste0("embed.bert", 1:768), "PassNumUnq", "QNoUnq")
+embed.bert.id=embed.bert.id |> select("PassNumUnq", "QNoUnq")
+f.embed.merged.tag=bind_cols(embed.bert.id,f.embed.merged.tag)
+
+pca_embeddings_80_tag=bind_cols(embed.bert.id,pca_embeddings_80_tag)
+
+rm(embed.bert.id)
+
+
+```
+
+
+
+
+
+# Ridge regression
+
+## All variables except embeddings
+
+Turn average correct into easy, medium, hard buckets
+
+
+Generate three datasets: 1. Item charactersitics & language characteristics 2. Item characteristics only 3. Item charactersitics, embeddings & language characteristics
+
+```{r}
+### f.analysis, f.train, f.test - all vars except embeddings
+### f.analysis2 - without language metrics
+### f.analysis3 - everything
+### f.analysis4 - only embeddings
+### f.analysis.pca - PCA embeddings plus everything else
+#### Variable names
+### all embeddings
+
+
+### Merge embedding option 1
+f.with.embed= left_join(f, embed.bert) #f.embed.merged.tag
+f.with.embed= left_join(f.with.embed, pca_embeddings_80) #pca_embeddings_80_tag
+
+vars = names(f.with.embed)
+vars.embed = vars[grep("embed", vars)]
+
+### item characteristics
+vars.fe=c("state", "year", "grade")
+#vars.fe=c()
+vars.chars= c("ques_text_highlight_yn","ques_text_ref_yn", "ques_order","pass_highlight_yn")
+vars.outcome=c("pVal.cons", "pVal.irt", "pVal.unadj")
+vars.id=c("PassNumUnq", "QNoUnq")
+vars.lang= setdiff(names(f.with.embed),
+                   c(vars.fe, vars.embed,vars.chars, vars.outcome, vars.id, vars.embed.pca))
+
+
+
+## Unadjusted results
+f.input= f.with.embed
+f.input$pVal= f.input$pVal.unadj
+
+
+#Models
+res_fe= fnc_reg_elasticNet(f.input,
+                             c("pVal", c("state", "grade", "year"))) # without language
+
+res_item= fnc_reg_elasticNet(f.input,
+                             c("pVal", c(vars.chars))) # without language metrics
+res_lang= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.lang))) ## everything except embedding
+res_item_embed= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.embed))) ## embeddings only
+
+# res_item_embed_pca= fnc_reg_elasticNet(f.input, 
+#                               c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
+
+res_item_all= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.chars,
+                                         vars.lang, vars.embed)))
+
+res_item_all_pca= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.chars,
+                                         vars.lang, vars.embed.pca)))
+
+
+res_unadj= bind_rows(res_fe, res_item, res_lang, res_item_embed, res_item_all, res_item_all_pca)
+
+res_unadj= round(res_unadj,2)
+res_unadj= bind_cols(type=rep("Unadjusted",nrow(res_unadj)),model=c("State, Grade, Year", "Only assessment characteristics ", "Only text analysis metrics", 
+"Only BERT embeddings", 
+"Assessment characteristics, text analysis metrics, & BERT embeddings", 
+"Assessment characteristics, text analysis metrics, & PCA on BERT embeddings"), res_unadj)
+
+#res_pca_results= bind_rows(res_lang_item_pcaembed, res_lang_item_pcaembed2)
+
+### IRT pvalues
+f.input= f.with.embed
+f.input$pVal= f.input$pVal.irt
+
+
+#Models
+res_fe= fnc_reg_elasticNet(f.input,
+                             c("pVal", c("state", "grade", "year")))
+res_item= fnc_reg_elasticNet(f.input,
+                             c("pVal", c(vars.chars))) # without language metrics
+res_lang= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.lang))) ## everything except embedding
+res_item_embed= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.embed))) ## embeddings only
+
+# res_item_embed_pca= fnc_reg_elasticNet(f.input, 
+#                               c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
+
+res_item_all= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.chars,
+                                         vars.lang, vars.embed)))
+
+res_item_all_pca= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.chars,
+                                         vars.lang, vars.embed.pca)))
+
+
+res_irt= bind_rows(res_fe, res_item, res_lang, res_item_embed, 
+                     res_item_all, res_item_all_pca)
+
+res_irt= round(res_irt,2)
+res_irt= bind_cols(type=rep("IRT",nrow(res_irt)),model=c("State, Grade, Year","Only item descriptives", "Only text analysis metrics", 
+"Only BERT embeddings", 
+"Item descriptions, text analysis metrics, & BERT embeddings", 
+"Item descriptions, text analysis metrics, & PCA on BERT embeddings"), res_irt)
+
+
+
+### Constant adjustment
+f.input= f.with.embed
+f.input$pVal= f.input$pVal.cons
+
+
+#Models
+
+res_fe= fnc_reg_elasticNet(f.input,
+                             c("pVal", c("state", "grade", "year")))
+
+
+res_item= fnc_reg_elasticNet(f.input,
+                             c("pVal", c(vars.chars))) # without language metrics
+res_lang= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.lang))) ## everything except embedding
+res_item_embed= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.embed))) ## embeddings only
+
+# res_item_embed_pca= fnc_reg_elasticNet(f.input, 
+#                               c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
+
+res_item_all= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.chars,
+                                         vars.lang, vars.embed)))
+
+res_item_all_pca= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.chars,
+                                         vars.lang, vars.embed.pca)))
+
+
+res_cons= bind_rows(res_fe,res_item, res_lang, res_item_embed, 
+                     res_item_all, res_item_all_pca)
+
+res_cons= round(res_cons,2)
+res_cons= bind_cols(type=rep("Cons",nrow(res_cons)),model=c("State, Grade, Year","Only item descriptives", "Only text analysis metrics", 
+"Only BERT embeddings", 
+"Item descriptions, text analysis metrics, & BERT embeddings", 
+"Item descriptions, text analysis metrics, & PCA on BERT embeddings"), res_cons)
+
+
+
+#View(res_cons)
+kable(res_unadj[,-1], format="latex")
+kable(res_cons[,-1], format="latex")
+kable(res_irt[,-1], format="latex")
+res= bind_rows(res_unadj, res_cons, res_irt) 
+
+
+write_csv(res, "Results/elasticnet_bert_oneset.csv")
+
+```
+
+
+
+### Alternate PCA embeddings
+```{r}
+
+
+
+
+```
+
+
+
+#### Alternate ridge with new embeddings
+
+```{r}
+
+
+
+
+
+```
+
+
+#### Alternate ridge with Llama
+
+```{r}
+#### Llama embeddings
+
+
+f.full= f
+f= f[1:1053,] #we dont have embeddings for Texas G3 2022 for now
+
+
+embed.llama= read_csv("Data/Embeddings/llama_embed.csv")
+embed.llama$perm= rep(1:24, 1053)
+embed.llama = embed.llama |> filter(perm==1) |> dplyr::select(-perm)
+
+names(embed.llama)= c(paste0("embed.llama", 1:4098))
+#embed.bert = embed.bert |> select(-id)
+
+f.with.embed= bind_cols(f,embed.llama)
+
+### Alternate PCA embeddings
+pca_embeddings_80= getpc(embed.llama)
+vars.embed.pca= names(pca_embeddings_80)
+f.with.embed= bind_cols(f.with.embed,pca_embeddings_80)
+
+
+
+```
+
+
+```{r}
+res_unadj_prev2=res_unadj
+res_cons_prev2=res_cons
+res_irt_prev2= res_irt
+
+vars = names(f.with.embed)
+vars.embed = vars[grep("embed", vars)]
+
+### item characteristics
+vars.fe=c("state", "year", "grade")
+vars.chars= c("ques_text_highlight_yn","ques_text_ref_yn", "ques_order","pass_highlight_yn")
+vars.outcome=c("pVal.cons", "pVal.irt", "pVal.unadj")
+vars.id=c("PassNumUnq", "QNoUnq")
+vars.lang= setdiff(names(f.with.embed),
+                   c(vars.fe, vars.embed,vars.chars, vars.outcome, vars.id, vars.embed.pca))
+
+
+
+## Unadjusted results
+f.input= f.with.embed
+f.input$pVal= f.input$pVal.unadj
+vars_select=c("pVal", c(vars.chars,vars.lang))
+
+
+#Models
+res_item= fnc_reg_elasticNet(f.input,
+                             c("pVal", c(vars.fe,vars.chars))) # without language metrics
+res_lang= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.lang))) ## everything except embedding
+res_item_embed= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.embed))) ## embeddings only
+
+res_item_embed_pca= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
+
+res_item_all= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.chars,
+                                         vars.lang, vars.embed)))
+
+res_item_all_pca= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.chars,
+                                         vars.lang, vars.embed.pca)))
+
+
+res_unadj= bind_rows(res_item, res_lang, res_item_embed, res_item_embed_pca, 
+                     res_item_all, res_item_all_pca)
+
+res_unadj= round(res_unadj,2)
+res_unadj= bind_cols(type=rep("Unadjusted",nrow(res_unadj)),model=c("Only assessment characteristics", "Only text analysis metrics", 
+"Only LlAMA embeddings", 
+"Only PCA LlAMA embeddings", 
+"Assessment characteristics, text analysis metrics, & LlAMA embeddings", 
+"Assessment characteristics, text analysis metrics, & PCA on LlAMA embeddings"), res_unadj)
+
+#res_pca_results= bind_rows(res_lang_item_pcaembed, res_lang_item_pcaembed2)
+
+### IRT pvalues
+f.input= f.with.embed
+f.input$pVal= f.input$pVal.irt
+
+
+#Models
+res_item= fnc_reg_elasticNet(f.input,
+                             c("pVal", c(vars.fe,vars.chars))) # without language metrics
+res_lang= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.lang))) ## everything except embedding
+res_item_embed= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.embed))) ## embeddings only
+
+res_item_embed_pca= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
+
+res_item_all= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.chars,
+                                         vars.lang, vars.embed)))
+
+res_item_all_pca= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.chars,
+                                         vars.lang, vars.embed.pca)))
+
+
+res_irt= bind_rows(res_item, res_lang, res_item_embed, res_item_embed_pca, 
+                     res_item_all, res_item_all_pca)
+
+res_irt= round(res_irt,2)
+res_irt= bind_cols(type=rep("IRT",nrow(res_irt)),model=c("Only assessment characteristics", "Only text analysis metrics", 
+"Only LlAMA embeddings", 
+"Only PCA LlAMA embeddings", 
+"Assessment characteristics, text analysis metrics, & LlAMA embeddings", 
+"Assessment characteristics, text analysis metrics, & PCA on LlAMA embeddings"), res_irt)
+
+
+
+### Constant adjustment
+f.input= f.with.embed
+f.input$pVal= f.input$pVal.cons
+
+
+#Models
+res_item= fnc_reg_elasticNet(f.input,
+                             c("pVal", c(vars.fe,vars.chars))) # without language metrics
+res_lang= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.lang))) ## everything except embedding
+res_item_embed= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.embed))) ## embeddings only
+
+res_item_embed_pca= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
+
+res_item_all= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.chars,
+                                         vars.lang, vars.embed)))
+
+res_item_all_pca= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.fe,vars.chars,
+                                         vars.lang, vars.embed.pca)))
+
+
+res_cons= bind_rows(res_item, res_lang, res_item_embed, res_item_embed_pca, 
+                     res_item_all, res_item_all_pca)
+
+res_cons= round(res_cons,2)
+res_cons= bind_cols(type=rep("Cons",nrow(res_cons)),model=c("Only assessment characteristics", "Only text analysis metrics", 
+"Only LlAMA embeddings", 
+"Only PCA LlAMA embeddings", 
+"Assessment characteristics, text analysis metrics, & LlAMA embeddings", 
+"Assessment characteristics, text analysis metrics, & PCA on LlAMA embeddings"), res_cons)
+
+
+
+#View(res_cons)
+kable(res_unadj[,-1], format="latex")
+kable(res_cons[,-1], format="latex")
+kable(res_irt[,-1], format="latex")
+
+```
+
+
+
+
+
+
+Using caret – results are similar to using PCA directly
+
+```{r}
+
+# embedding_cols <- grep("embed.all", names(f.train3), value = TRUE)
+# preprocess_embeddings <- preProcess(f.train3[, embedding_cols], method = c("pca"),
+#                                     thresh=0.8)
+# train_embeddings_pca <- predict(preprocess_embeddings, f.train3[, embedding_cols])
+# test_embeddings_pca <- predict(preprocess_embeddings, f.test3[, embedding_cols])
+# 
+# train_no_embeddings <- f.train3[, !names(f.train3) %in% embedding_cols]
+# test_no_embeddings <- f.test3[, !names(f.test3) %in% embedding_cols]
+# 
+# train_pca <- cbind(train_no_embeddings, train_embeddings_pca)
+# test_pca <- cbind(test_no_embeddings, test_embeddings_pca)
+# 
+# res_item_all_pca= fnc_reg_elasticNet(train_pca, test_pca, alpha=0) ## everything
+# res_item_all_pca
+# res_item_all
+# 
+# 
+# res_item_all_pca= fnc_reg_elasticNet_linear(train_pca, test_pca, alpha=0) ## everything
+# res_item_all_pca
+# res_item_all
+# 
+# 
+# res_item_all_pca= fnc_reg_elasticNet_irt(train_pca, test_pca, alpha=0) ## everything
+# res_item_all_pca
+# res_item_all
+
+```
+
+### Check if we need to eliminate linguistic features
+
+```{r}
+
+
+# # Define lambda range for ridge regression
+# lambda_seq <- seq(0, 10, length = 50)
+# 
+# # Set up training control for cross-validation
+# train_control <- trainControl(method = "cv", number = 10)
+# 
+# # Define ridge regression model using traditional features only
+# ridge_model <- train(
+#   pVal ~ ., 
+#   data = f.train, 
+#   method = "glmnet",
+#   family = "gaussian",
+#   trControl = train_control,
+#   tuneGrid = expand.grid(alpha = 0, lambda = lambda_seq),
+#   preProcess = c("center", "scale")
+# )
+# 
+# # Apply RFE with ridge regression to select the best features
+# rfe_control <- rfeControl(functions = caretFuncs, method = "cv", number = 10)
+# 
+# # Run RFE with a ridge model to find the best feature subset
+# rfe_model <- rfe(
+#   pVal ~ ., 
+#   data = f.train, 
+#   sizes = c(5, 10, 15, 20, 25), # Number of features to test
+#   rfeControl = rfe_control,
+#   method = "glmnet",
+#   family = "gaussian",
+#   trControl = train_control,
+#   tuneGrid = expand.grid(alpha = 0, lambda = lambda_seq),
+#   preProcess = c("center", "scale")
+# )
+
+# # View selected features
+# print(rfe_model$optVariables)
+# ridge_model_final$bestTune
+# 
+# # Train final ridge model with the selected features
+# selected_features <- rfe_model$optVariables
+# ridge_model_final <- train(
+#   pVal ~ ., 
+#   data = f.train[, c(selected_features, "pVal")],
+#   method = "glmnet",
+#   family = "gaussian",
+#   trControl = train_control,
+#   tuneGrid = expand.grid(alpha = 0, lambda = lambda_seq),
+#   preProcess = c("center", "scale")
+# )
+# 
+# # Evaluate final model
+# ridge_model_final$bestTune
+# ridge_model_final$results |> 
+#   mutate(lambda = log(lambda)) |>
+#   ggplot(aes(x = lambda, y = RMSE, col = factor(alpha))) +
+#   geom_line() + geom_point() + theme_minimal()
+# 
+# # Predictions on test data using selected features
+# y_test_hat <- predict(ridge_model_final, test[, selected_features])
+# y_train_hat <- predict(ridge_model_final, train[, selected_features])
+# 
+# # Performance evaluation
+# print(root_mean_squared_error(y_test, y_test_hat))
+# print(cor(y_test, y_test_hat))
+
+
+
+
+```
+
+### Random forest
+
+```{r}
+# library(caret)
+# fitControl= trainControl(method= "cv", number=5,classProbs = TRUE)
+
+```
+
+```{r}
+ptm <- proc.time()
+library(ranger)
+library(mlr)
+library(caret)
+# Choose resampling strategy and define grid
+
+
+train= f.train.pca |> select(-pVal, -pVal.irt)
+test= f.test.pca |> select(-pVal, -pVal.irt)
+
+control <- trainControl(method='repeatedcv', 
+                        number=10, 
+                        repeats=3)
+
+#f.train.pca, f.test.pca
+fit.rf= caret::train(
+            pVal.cons~ .,
+            data=train,
+              method='ranger',
+              importance="permutation",
+              metric= "RMSE" #num.trees = 100,
+) #trControl = control,
+              #tuneLength = 15,
+
+
+# m.randomForest <- train(pVal ~ ., 
+#                       data = f.train, 
+#                       method = "rf", 
+#                       trControl = fitControl,
+#                       na.action = na.omit,
+#                       trace = FALSE)
+
+rfpred= predict(fit.rf, newdata=f.test,type="prob")
+
+Metrics::rmse(f.test$pVal,rfpred)
+
+hist(pred1)
+hist(f.test$pVal)
+cor(f.test$pVal, rfpred)
+
+
+
+
+
+```
+
+```{r}
+
+ptm <- proc.time()
+library(ranger)
+library(mlr)
+library(caret)
+# Choose resampling strategy and define grid
+ptm <- proc.time()
+
+train= f.train.pca |> select(-pVal, -pVal.irt)
+test= f.test.pca |> select(-pVal, -pVal.irt)
+n_features <- length(names(f.train.pca))-1
+
+
+control <- trainControl(method='repeatedcv', 
+                        number=10, 
+                        repeats=3)
+# 
+# h2o.no_progress()
+# h2o.init(max_mem_size = "5g")
+# train_h2o <- as.h2o(train)
+
+hyper_grid <- expand.grid(
+  mtry = floor(n_features * c(.15, .33, .5)),
+  min.node.size = c(10, ), 
+)
+
+#f.train.pca, f.test.pca
+for(i in seq_len(nrow(hyper_grid))) {
+fit.rf= caret::train(
+            pVal.cons~ .,
+            data=train,
+            method='ranger',
+            num.trees = n_features * 10,
+            importance="impurity",
+            mtry=hyper_grid$mtry[i],
+            min.node.size   = hyper_grid$min.node.size[i],
+            replace         = hyper_grid$replace[i],
+            sample.fraction = hyper_grid$sample.fraction[i],
+            verbose         = FALSE,
+            seed            = 123,
+            respect.unordered.factors = 'order',
+)
+hyper_grid$rmse[i] <- sqrt(fit.rf$prediction.error)
+}
+
+p <- vip::vip(fit.rf, num_features = 25, bar = FALSE)
+#p2 <- vip::vip(rf_permutation, num_features = 25, bar = FALSE)
+
+#gridExtra::grid.arrange(p1, p2, nrow = 1)
+# m.randomForest <- train(pVal ~ ., 
+#                       data = f.train, 
+#                       method = "rf", 
+#                       trControl = fitControl,
+#                       na.action = na.omit,
+#                       trace = FALSE)
+
+rfpred= predict(fit.rf, newdata=f.test,type="prob")
+
+Metrics::rmse(f.test$pVal,rfpred)
+
+hist(pred1)
+hist(f.test$pVal)
+cor(f.test$pVal, rfpred)
+
+```
+
+## Neural net
+
+```{r}
+
+fitControl= trainControl(method="cv",number=5)
+tune.grid.neuralnet <- expand.grid(
+  layer1 = c(3, 10, 20),
+  layer2 = c(3,10,20),
+  layer3 = c(1)
+)
+m.NeuralNet <- train(pVal ~ ., 
+                      data = f.train, 
+                      method = "neuralnet", 
+                      trControl = fitControl,
+                     preProc = c("center", "scale"),
+                     metric = "RMSE",
+                      na.action = na.omit,
+                     tuneGrid=tune.grid.neuralnet
+                    )
+
+
+nnpred= predict(m.NeuralNet, newdata=f.test)
+
+Metrics::rmse(f.test$pVal,nnpred)
+
+hist(nnpred)
+hist(f.test$pVal)
+cor(f.test$pVal, nnpred)
+
+```

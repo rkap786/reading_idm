@@ -10,15 +10,25 @@ library(tidyverse)
 library(dplyr)
 library(caret)
 library(glmnet)
-setwd("/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Code/reading_idm/")
+library(xtable)
+
 ```
 
 Create file for analysis
 
 ```{r}
-f= read_csv("Data/data_qual_data.csv")
-f= f |> select(pVal, PassageWordCount.gen, numPara, CorrectOptionNum, ques_order, 
-               numPara,BoxTextQuestion2)
+#setwd("/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/")
+
+setwd("G:/My Drive/0. Projects - Stanford/Item generation")
+f= read_csv("Data/Data/Processed/data_qual_info.csv")
+# glimpse(f)
+
+f= f |> dplyr::select(-pdfname,  -starts_with("PerOption"), 
+                      -CorrectOptionNum,
+                      -QuestionNo) #-DESWC,
+
+
+#f= f |> select(pVal, PassageWordCount.gen, numPara, CorrectOptionNum, ques_order, numPara,BoxTextQuestion2)
 
 
 ## these cannot be continous numbers
@@ -60,9 +70,244 @@ f.with.embed= f.with.embed |> select(-starts_with("id"))
 
 ```
 
+### Summary tables
+
 Turn average correct into easy, medium, hard buckets
 
 ```{r}
+
+f |> dplyr::select(grade, pVal) |>
+  ggplot(aes(pVal, fill=grade, color=grade)) + geom_boxplot()
+
+f |> group_by(grade) |>
+  summarise(meanfk= mean(fk, na.rm=T)) 
+
+
+tab1= f |> group_by(state, grade, year) |>
+  summarise(meanpval= mean(pVal, na.rm=T)
+            ) |>
+  pivot_wider(names_from=year,
+              values_from=c(meanpval)) |> as.data.frame()
+tab1$Mean= rowMeans(tab1[,-c(1:2)], na.rm=T)
+colMean= round(colMeans(tab1[,-c(1:2)], na.rm=T),2)
+#tab1= bind_rows(tab1, colMean)
+tab1= round(tab1[,-c(1:2)])
+col_order <- c("state","grade","2018","2019", "2021", "2022", "2023", "Mean")
+tab1 <- tab1[, col_order]
+
+
+xtab1= xtable(data.frame(tab1), 
+                      caption = "Grades by State and Year",
+                      align= "ccccccccc", digits=2)
+
+print(xtab1, include.rownames=FALSE)
+
+
+
+
+tab2= f |> group_by(state, grade, year) |>
+  summarise(n= n()
+            ) |>
+  pivot_wider(names_from=year,
+              values_from=n) |> as.data.frame()
+tab2$Total= rowSums(tab2[,-c(1:2)], na.rm=T)
+colTotal= round(colSums(tab2[,-c(1:2)], na.rm=T),2)
+colTotal= c("Total", "", as.numeric(colTotal))
+tab2= rbind(tab2, colTotal)
+
+col_order <- c("state","grade","2018","2019", "2021", "2022", "2023", "Total")
+tab2 <- tab2[, col_order]
+
+xtab2= xtable(data.frame(tab2), 
+                      caption = "Grades by State and Year",
+                      align= "ccccccccc")
+
+print(xtab2, , include.rownames=FALSE)
+```
+
+### Rescale p-values
+
+```{r}
+
+tx_pvalue_new= c(0.30, 0.44, 0.50, 0.58, 0.66, 0.70)
+ny_pvalue_new= c(0.30, 0.40, 0.52, 0.59, 0.63, 0.70)
+
+ny_meanpval= f |> filter(state=="NY") |> group_by(grade) |> summarise(meanpval= mean(pVal, na.rm=T)) 
+tx_meanpval= f |> filter(state=="Texas") |> group_by(grade) |> summarise(meanpval= mean(pVal, na.rm=T))
+
+ny_adj= ny_pvalue_new -as.vector(ny_meanpval[,2])$meanpval
+tx_adj= tx_pvalue_new -as.vector(tx_meanpval[,2])$meanpval
+
+f = f |>
+  mutate(adj= case_when(state=="NY" & grade=="Grade3" ~ ny_adj[1],
+                        state=="NY" & grade=="Grade4" ~ ny_adj[2],
+                        state=="NY" & grade=="Grade5" ~ ny_adj[3],
+                        state=="NY" & grade=="Grade6" ~ ny_adj[4],
+                        state=="NY" & grade=="Grade7" ~ ny_adj[5],
+                        state=="NY" & grade=="Grade8" ~ ny_adj[6],
+                        state=="Texas" & grade=="Grade3" ~ tx_adj[1],
+                        state=="Texas" & grade=="Grade4" ~ tx_adj[2],
+                        state=="Texas" & grade=="Grade5" ~ tx_adj[3],
+                        state=="Texas" & grade=="Grade6" ~ tx_adj[4],
+                        state=="Texas" & grade=="Grade7" ~ tx_adj[5],
+                        state=="Texas" & grade=="Grade8" ~ tx_adj[6]
+                        )
+         )
+
+
+f = f |>
+  mutate(pval2= pVal + adj)
+
+tab3= f |> group_by(state, grade, year) |> 
+  summarise(Orig_pvalue=mean(pVal), 
+            Rescaled_pvalue= mean(pval2)) 
+
+tab3 = tab3|> 
+  select(-Orig_pvalue) |>
+  pivot_wider(names_from = year,
+              values_from = Rescaled_pvalue) |>
+  as.data.frame()
+
+col_order <- c("state","grade","2018","2019", "2021", "2022", "2023")
+tab3 <- tab3[, col_order]
+
+xtab3= xtable(data.frame(tab3), 
+                      caption = "Grades by State and Year",
+                      align= rep("c", ncol(tab3)+1))
+
+
+print(xtab3 , include.rownames=FALSE)
+
+```
+
+### Analysis without embeddings
+
+```{r}
+
+set.seed(123)
+library(tidymodels)
+f.analysis= f |> select(-PassNumUnq, -Passage, -starts_with("option_"), -QuestionText,
+                        -QNoUnq, -pass_text_underline_yn,-pass_text_italics_yn,
+                        -pass_text_underline_yn, -pass_text_bold_yn, -pass_text_fn_yn,
+                        -numPara
+                        ) |> na.omit()
+glimpse(f.analysis)
+
+set.seed(123)
+library(tidymodels)
+library(caret)
+fsplit2= f.analysis |> initial_split(prop=0.8, strata = pVal)
+
+f.train2= training(fsplit2)
+f.test2= testing(fsplit2)
+dim(f.train2)
+dim(f.test2)
+
+#x2 = model.matrix(pVal~., f.train2)[,-1]
+#y2= f.train2$pVal
+#x.test2= model.matrix(pVal~., f.test2)[,-1]
+
+f.analysis2= f.analysis |> 
+  select(starts_with("pass"), starts_with("Pass"), ,starts_with("ques"),
+         starts_with("option"), starts_with("num"), pVal, year, state, grade, fk) 
+         
+fsplit3= f.analysis2 |> initial_split(prop=0.8, strata = pVal)
+
+f.train3= training(fsplit3)
+f.test3= testing(fsplit3)
+dim(f.train3)
+dim(f.test3)         
+
+
+
+```
+
+### Ridge regression
+
+```{r}
+set.seed(123)
+lambda <- 10^seq(-3, 3, length = 50)
+alpha <- seq(0, 1, length=10)
+
+
+ridge.model.sparse <- train(pVal~.,
+                     method='glmnet',
+                     family="gaussian",
+                      data= f.train3,
+                      trControl = trainControl("cv", number = 10),
+  tuneGrid = expand.grid(alpha = alpha, lambda = lambda), #alpha=0 means Ridge, 1=Lasso
+                     preProcess = c('center', 'scale'))
+
+ridge.model.sparse$bestTune
+
+ridge.model.sparse$results |> 
+  mutate(alpha= round(alpha,3)) |>
+  ggplot(aes(x=log(lambda), y=RMSE, col=factor(alpha))) + geom_line() + geom_point() + theme_minimal()
+
+# c1=round(coef.glmnet(ridge.model.sparse$finalModel, s = ridge.model.sparse$bestTune$lambda),4)
+
+coef_ridge_sparse <- round(coef(ridge.model.sparse$finalModel, 
+                         ridge.model.sparse$bestTune$lambda),4)
+
+coef_ridge_sparse |>
+  as.matrix() |> as.data.frame() |>
+  mutate(vars= rownames(coef_ridge_sparse)) |>
+  rename(est=s1) |>
+  arrange(desc(est))
+
+y.test_hat <- predict(ridge.model.sparse, f.test3)
+y.train_hat <- predict(ridge.model.sparse, f.train3)
+Metrics::rmse(f.test3$pVal,y.test_hat)
+Metrics::rmse(f.test3$pVal,rep(mean(f.test3$pVal),nrow(f.test3)))
+cor(f.test3$pVal,y.test_hat)
+Metrics::rmse(f.train3$pVal,y.train_hat)
+cor(f.train3$pVal,y.train_hat)
+
+
+
+
+
+```
+
+### With the language coh-metrix variables
+
+```{r}
+set.seed(123)
+lambda <- 10^seq(-3, 3, length = 100)
+alpha <- seq(0, 0.2, length=10)
+
+
+ridge.model <- train(pVal~.,
+                     method='glmnet',
+                     family="gaussian",
+                      data= f.train2,
+                      trControl = trainControl("cv", number = 10),
+  tuneGrid = expand.grid(alpha = alpha, lambda = lambda), #alpha=0 means Ridge, 1=Lasso
+                     preProcess = c('center', 'scale'))
+
+# ridge.model$results |> 
+#   mutate(alpha= round(alpha,3)) |>
+#   filter(alpha<0.05 | alpha>0.98) |> 
+#   ggplot(aes(x=log(lambda), y=RMSE, col=factor(alpha))) + geom_line() + geom_point() + theme_minimal()
+
+
+coef_ridge <- round(coef(ridge.model$finalModel, 
+                         ridge.model$bestTune$lambda),4)
+
+coef_ridge |>
+  as.matrix() |> as.data.frame() |>
+  mutate(vars= rownames(coef_ridge)) |>
+  rename(est=s1) |>
+  arrange(desc(est))
+
+y.test_hat2 <- predict(ridge.model, f.test2)
+y.train_hat2 <- predict(ridge.model, f.train2)
+Metrics::rmse(f.test2$pVal,y.test_hat)
+Metrics::rmse(f.test2$pVal,rep(mean(f.test2$pVal),nrow(f.test2)))
+cor(f.test2$pVal,y.test_hat)
+Metrics::rmse(f.train2$pVal,y.train_hat)
+cor(f.train2$pVal,y.train_hat)
+
 
 
 ```
@@ -70,7 +315,9 @@ Turn average correct into easy, medium, hard buckets
 ```{r}
 set.seed(123)
 library(tidymodels)
-fsplit= f.with.embed |> initial_split(prop=0.8, strata = pVal)
+f.analysis= f |> select(-PassNumUnq, Passage)
+
+fsplit= f |> initial_split(prop=0.8, strata = pVal)
 
 f.train= training(fsplit)
 f.test= testing(fsplit)
@@ -110,7 +357,7 @@ set.seed(123)
 # coef(fit_ridge)
 # 
 # ### ridge
-ridge.model <- glmnet(x, y, lambda = 0, alpha = 1, standardize = TRUE)
+ridge.model <- glmnet(x2, y2, lambda = 0, alpha = 1, standardize = TRUE)
 round(coef(ridge.model),4)
 y.test_hat <- predict(ridge.model, x.test)
 Metrics::rmse(f.test$pVal,y.test_hat)

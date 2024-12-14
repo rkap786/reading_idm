@@ -8,15 +8,19 @@ editor: visual
 
 ```{r}
 library(readr)
+library(readxl)
 library(tidyverse)
 library(dplyr)
-setwd("/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Code/reading_idm")
+setwd('/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Data/')
+#setwd("G:/My Drive/0. Projects - Stanford/Item generation/Data")
+
+
 ```
 
 ```{r}
 # f1= read_csv("Data/Digitized items - Sheet1.csv")
 # f2= read_csv("Data/Digitized items_Om - Sheet1.csv")
-f= read_csv("Data/Combined data_edit - Data_combined_edit.csv")
+f= read_csv("Data/Raw/Combined data_edit - Data_combined_edit.csv")
 
 #f1= f1[,-1]
 # f2= f2[,-1]
@@ -150,10 +154,9 @@ write_csv(f,"Data/Datacombined_clean.csv")
 
 ### Passage description
 
-
 ```{r}
 f_passage = f |> filter(!is.na(Passage), Passage!="")  |>
-  dplyr::select(pdfname, PassNumUnq, Passage, PassageWordCount, PassageLexile, PassageFK, BoxTextPassage, BoxTextQuestion, FootnoteYN)
+  dplyr::select(pdfname, PassNumUnq, Passage, PassageWordCount, PassageLexile, PassageFK, BoxTextPassage, BoxTextQuestion, FootnoteYN,PassageFK)
 
 
 n_distinct(f_passage$Passage)
@@ -164,18 +167,23 @@ f_passage= f_passage |>
   mutate(pass_text_bold_yn= if_else(str_detect(Passage, "\\*"),1,0),
          pass_text_italics_yn= if_else(str_detect(Passage, "\\_"),1,0),
          pass_text_fn_yn= if_else(str_detect(Passage, "\\^"),1,0),
-         pass_highlight_yn= if_else(pass_text_bold_yn==1 | pass_text_italics_yn==1 | pass_text_fn_yn==1, 1, 0)
+         pass_text_underline_yn= if_else(str_detect(Passage, "<u>"),1,0),
+         pass_highlight_yn= if_else(pass_text_bold_yn==1 | pass_text_italics_yn==1 | pass_text_fn_yn==1 | pass_text_underline_yn==1, 1, 0)
+         
          )
 
 table(f_passage$pass_text_bold_yn)
 table(f_passage$pass_text_italics_yn)
 table(f_passage$pass_text_fn_yn)
+table(f_passage$pass_text_underline_yn)
+table(f_passage$pass_highlight_yn)
 
 
 ## Drop highlights from passage
 f_passage$Passage= gsub('\\*', '', f_passage$Passage)
 f_passage$Passage= gsub('\\_', '', f_passage$Passage)
 f_passage$Passage= gsub('\\^[[:digit:]]+', '', f_passage$Passage)
+f_passage$Passage= gsub('<u>', '', f_passage$Passage)
 
 sum(str_detect(f_passage$Passage,'\\^'))
 sum(str_detect(f_passage$Passage,'\\*'))
@@ -193,8 +201,12 @@ f_passage = f_passage |> dplyr::select(-FootnoteYN_binary) #we dont need both
 ## All passages have line numbers, no useful variation
 sum(str_detect(f_passage$Passage,'\n[[:digit:]]+') | 
       str_detect(f_passage$Passage,'\n [[:digit:]]+') |
-      str_detect(f_passage$Passage,'\n  [[:digit:]]+')
+      str_detect(f_passage$Passage,'\n  [[:digit:]]+') |
+      str_detect(f_passage$Passage,'\n[[:digit:]]+\\.') | 
+      str_detect(f_passage$Passage,'\n [[:digit:]]+\\.') |
+      str_detect(f_passage$Passage,'\n  [[:digit:]]+\\.')
       )
+
 nrow(f_passage)
 
 f_passage$linenums = if_else(str_detect(f_passage$Passage,'\n[[:digit:]]+'), 1, 2)
@@ -204,11 +216,21 @@ table(f_passage$linenums)
 
 f_passage = f_passage |> dplyr::select(-linenums) 
 
+
+
+
 ## Drop numbers. from passages
+f_passage$Passage= gsub('\n[[:digit:]]+\\.', '', f_passage$Passage)
+f_passage$Passage= gsub('\n [[:digit:]]+\\.', '', f_passage$Passage)
+f_passage$Passage= gsub('\n  [[:digit:]]+\\.', '', f_passage$Passage)
 f_passage$Passage= gsub('\n[[:digit:]]+', '', f_passage$Passage)
 f_passage$Passage= gsub('\n [[:digit:]]+', '', f_passage$Passage)
 f_passage$Passage= gsub('\n  [[:digit:]]+', '', f_passage$Passage)
+f_passage$Passage= gsub('\n[[:digit:]]+\\"', '', f_passage$Passage)
+f_passage$Passage= gsub('\\"[[:digit:]]+\\.', '', f_passage$Passage)
+
 f_passage$Passage= gsub('\"1.', '', f_passage$Passage)
+f_passage$Passage= gsub('\"1', '', f_passage$Passage)
 
 
  
@@ -233,36 +255,71 @@ f_passage$numPara= str_count(f_passage$Passage, "\n")
 
 
 ## Remove paragraph identifiers
-f_passage$Passage= gsub('\n', '', f_passage$Passage)
+#f_passage$Passage= gsub('\n', '', f_passage$Passage)
 f_passage$Passage= gsub('*', '', f_passage$Passage)
 f_passage$Passage= gsub('_', '', f_passage$Passage)
+f_passage$Passage= gsub('^[[:digit:]]+\\.', '', f_passage$Passage)
 f_passage$Passage= gsub('^[[:digit:]]+', '', f_passage$Passage)
 
 
 ## Word count
 library(tidytext)
 f_passage$PassageWordCount.gen= lengths(strsplit(f_passage$Passage, "\\W+"))
-write_csv(f_passage,"Data/Datacombined_clean_passages.csv")
 
 
+
+## Export all passages as text files into a folder
+for (i in 1:nrow(f_passage)) {
+  write(f_passage$Passage[i], 
+        file=paste0("Data/Processed/Passages/", f_passage$PassNumUnq[i], ".txt")) 
+}
+
+write_csv(f_passage,"Data/Processed/Datacombined_clean_passages.csv")
 ```
 
-
-Readability from Python
+### Readability from Python
 
 Note to self: check why 3 points have different word length
 
 ```{r}
-f_passage= read_csv("Data/Datacombined_clean_passages_fk.csv")
+#f_passage= read_csv(f_passage,"Data/Datacombined_clean_passages.csv")
+#f_passage=f_passage[,-1]
+# File above with FLesch Kincaid readability scores
+f_passage= read_csv("Data/Processed/Datacombined_clean_passages_fk_py.csv")
 f_passage=f_passage[,-1]
+#names(f_passage)
 plot(f_passage$PassageFK, f_passage$fk)
 cor(f_passage[,c("PassageFK","fk")],use = "complete.obs") 
 plot(f_passage$PassageWordCount, f_passage$passage_len)
-
+plot(f_passage$PassageWordCount.gen, f_passage$passage_len)
+cor(f_passage$PassageWordCount.gen, f_passage$passage_len)
+#passage_len is from python
+# PassageWordCount is given from data
+# PassageWordCount.gen is from R and is closest to the data, this is what we use
+ 
 f_passage$FootnoteYNbinary= if_else(is.na(f_passage$FootnoteYN),0,1)
 f_passage= f_passage |> dplyr::select(-PassageWordCount, -PassageFK, 
-                                      -PassageWordCount.gen, -PassageLexile)
+                                      -passage_len, -PassageLexile)
 glimpse(f_passage)
+
+write_csv(f_passage,"Data/Processed/Datacombined_clean_passages2.csv")
+
+
+
+```
+
+### Coh-Metrix
+
+```{r}
+f_passage_cm= read_excel("Data/Resultsfinal.xlsx", sheet = "Results3")
+f_passage_cm= f_passage_cm |> rename(PassNumUnq= TextID) |>
+  mutate(PassNumUnq= str_remove_all(PassNumUnq,".txt"))
+
+f_passage =inner_join(f_passage, f_passage_cm) 
+write_csv(f_passage,"Data/Processed/Datacombined_clean_passages2.csv")
+
+
+
 ```
 
 ### Questions, Options and answers
@@ -278,8 +335,6 @@ f_options |> filter(is.na(pVal)) |> pull(pdfname) |> unique()
 f_options = f_options |> filter(!is.na(pVal)) # NY 2021 is dropped
 
 
-
-
 table(str_sub(f_options$QuestionText,1,2))
 f_options$QuestionNo = str_sub(f_options$QuestionText,1,2)
 f_options$QuestionText = str_sub(f_options$QuestionText,3,-1)
@@ -288,6 +343,48 @@ table(str_sub(f_options$Option1,1,2))
 table(str_sub(f_options$Option2,1,2))
 table(str_sub(f_options$Option3,1,2))
 table(str_sub(f_options$Option4,1,2))
+
+### Did question text contain bolded text
+f_options$ques_text_bold_yn= if_else(str_detect(f_options$QuestionText, "\\*"),1,0)
+table(f_options$ques_text_bold_yn)
+
+### Did question contain underlined text
+f_options$ques_text_underline_yn= if_else(str_detect(f_options$QuestionText, "<u>"),1,0)
+table(f_options$ques_text_underline_yn)
+
+f_options$ques_text_highlight_yn= if_else(f_options$ques_text_bold_yn==1 | f_options$ques_text_underline_yn==1, 1, 0)
+
+f_options= f_options |> dplyr::select(-ques_text_underline_yn, -ques_text_bold_yn)
+
+#f_options$ques_text_bold_len= lapply(extracted_str, function(x) x[2]-x[1]+1)
+#extracted_str <- str_sub(extracted_str, 2, -2)
+
+
+### Reference to paragraph numbers
+#f_options$QuestionText[str_detect(f_options$QuestionText, "paragraph")]
+f_options$QuestionText[str_detect(f_options$QuestionText, "read these")]
+
+f_options$ques_text_para_yn= if_else(str_detect(f_options$QuestionText, "paragraph"),1,0)
+
+f_options$ques_text_sentence_yn= if_else(
+  str_detect(f_options$QuestionText, "Read this") |
+    str_detect(f_options$QuestionText, "Read these") |
+    str_detect(f_options$QuestionText, "Read the") ,1,0)
+
+
+f_options$ques_text_ref_yn= if_else(f_options$ques_text_para_yn==1 | f_options$ques_text_sentence_yn==1, 1, 0)
+
+f_options= f_options |> dplyr::select(-ques_text_para_yn, -ques_text_sentence_yn)
+
+## Remove special characters from questions
+#sum(str_detect(f_options$QuestionText,'\\*')) ##Bold
+#sum(str_detect(f_options$QuestionText,'\\_'))
+#sum(str_detect(f_options$QuestionText,'<u>'))
+
+f_options$QuestionText= gsub('\\*', '', f_options$QuestionText)
+f_options$QuestionText= gsub('\\_', '', f_options$QuestionText)
+f_options$QuestionText= gsub('<u>', '', f_options$QuestionText)
+
 
 
 ## Edit Option remove first letters
@@ -342,6 +439,27 @@ f_options= f_options |> dplyr::select(-CorrectOption)
 f_options= f_options|> group_by(pdfname, PassNumUnq) |>
   mutate(n= n(), ques_order = 1:n) |> dplyr::select(-n) |> ungroup()
 
+names(f_options)
+
+## Remove special characters from options
+f_options$option_distractor1= gsub('\\*', '', f_options$option_distractor1)
+f_options$option_distractor2= gsub('\\*', '', f_options$option_distractor2)
+f_options$option_distractor3= gsub('\\*', '', f_options$option_distractor3)
+f_options$option_correct_ans= gsub('\\*', '', f_options$option_correct_ans)
+
+f_options$option_distractor1= gsub('\\_', '', f_options$option_distractor1)
+f_options$option_distractor2= gsub('\\_', '', f_options$option_distractor2)
+f_options$option_distractor3= gsub('\\_', '', f_options$option_distractor3)
+f_options$option_correct_ans= gsub('\\_', '', f_options$option_correct_ans)
+
+
+f_options$option_distractor1= gsub('<u>', '', f_options$option_distractor1)
+f_options$option_distractor2= gsub('<u>', '', f_options$option_distractor2)
+f_options$option_distractor3= gsub('<u>', '', f_options$option_distractor3)
+f_options$option_correct_ans= gsub('<u>', '', f_options$option_correct_ans)
+
+
+
 
 ```
 
@@ -354,24 +472,31 @@ f_clean= inner_join(f_passage, f_options)
 # anti_join(f_passage, f_options) |> View()
 #f_clean= inner_join(f_clean, f_pv)
 f_clean= f_clean |> filter(!is.na(pVal))
+#f_clean= f_clean |> filter(!is.na(fk))
+
 names(f)
 f_desc= f |> dplyr::select(pdfname, PassNumUnq, QNoUnq, year, grade, state)
 f_clean= inner_join(f_clean, f_desc)
+names(f_clean)
+f_clean = f_clean |> dplyr::select(-BoxTextPassage, -BoxTextPassage, -BoxTextOption, -BoxTextQuestion, -FootnoteYN, -OptionAddInfo, -FootnoteYNbinary, 
+                                   -ItemType
+                                   )
+
+## Drop the text features we dont want to use
+#f_clean= f_clean |> select(-RDFRE, - RDFKGL, -DESWC)
 
 n_distinct(f_clean$PassNumUnq)
 n_distinct(f_clean$QNoUnq)
-f_clean_for_embed= f_clean |> dplyr::select(pdfname, PassNumUnq, Passage, QNoUnq, 
-                                     QuestionText, starts_with("option"), pVal, 
-                                     year, grade, fk, passage_len,numPara,
-                                     -OptionAddInfo,-FootnoteYN) 
+f_clean_for_embed= f_clean |> dplyr::select(pdfname, PassNumUnq, Passage, QNoUnq,
+                                     QuestionText, starts_with("option"), pVal)
 
-f_clean_for_embed$question_correct_ans= paste0(f_clean_for_embed$QuestionText, 
+f_clean_for_embed$question_correct_ans= paste0(f_clean_for_embed$QuestionText,
                                                f_clean_for_embed$option_correct_ans)
-f_clean_for_embed$question_dis1= paste0(f_clean_for_embed$QuestionText, 
+f_clean_for_embed$question_dis1= paste0(f_clean_for_embed$QuestionText,
                                                f_clean_for_embed$option_distractor1)
-f_clean_for_embed$question_dis2= paste0(f_clean_for_embed$QuestionText, 
+f_clean_for_embed$question_dis2= paste0(f_clean_for_embed$QuestionText,
                                                f_clean_for_embed$option_distractor2)
-f_clean_for_embed$question_dis3= paste0(f_clean_for_embed$QuestionText, 
+f_clean_for_embed$question_dis3= paste0(f_clean_for_embed$QuestionText,
                                                f_clean_for_embed$option_distractor3)
 
 f_clean_for_embed$psg_question_correct_ans= paste0(f_clean_for_embed$option_correct_ans,
@@ -379,21 +504,23 @@ f_clean_for_embed$psg_question_correct_ans= paste0(f_clean_for_embed$option_corr
                                                    f_clean_for_embed$Passage
                                                )
 f_clean_for_embed$psg_question_dis1= paste0(
-                                            f_clean_for_embed$QuestionText, 
+                                            f_clean_for_embed$QuestionText,
                                             f_clean_for_embed$option_distractor1,
                                             f_clean_for_embed$Passage)
 f_clean_for_embed$psg_question_dis2= paste0(
-                                            f_clean_for_embed$QuestionText, 
+                                            f_clean_for_embed$QuestionText,
                                             f_clean_for_embed$option_distractor2,
                                             f_clean_for_embed$Passage)
-f_clean_for_embed$psg_question_dis3= paste0(f_clean_for_embed$QuestionText, 
+f_clean_for_embed$psg_question_dis3= paste0(f_clean_for_embed$QuestionText,
                                                f_clean_for_embed$option_distractor3,
                                             f_clean_for_embed$Passage)
 
+f_clean = f_clean |> relocate(pVal, .after=last_col())
+f_clean_for_embed = f_clean_for_embed |> relocate(pVal, .after=last_col())
 
 
-write_csv(f_clean_for_embed, "Data/data_passage_ques_options_pv.csv")
-write_csv(f_clean, "Data/data_qual_info.csv")
+write_csv(f_clean_for_embed, "Data/Processed/data_passage_ques_options_pv.csv")
+write_csv(f_clean, "Data/Processed/data_qual_info.csv")
 
 #write_csv(f_clean_for_embed,"/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Data/data_passage_ques_options_pv.csv")
 
@@ -406,10 +533,29 @@ write_csv(f_clean, "Data/data_qual_info.csv")
 ```{r}
 
 ## Check no duplicate for :2023-released-items-ela-g3
-n_distinct(f$PassNumUnq)
-n_distinct(f$QNoUnq)
+
+
+n_distinct(f_clean$PassNumUnq)
+n_distinct(f_clean$QNoUnq)
 table1= data.frame(table(f$grade, f$year))
 library(gtsummary)
+
+f_clean |> group_by(year) |> summarize(n=n())
+
+f_clean |> group_by(grade, state, year) |> summarize(n=n()) |> 
+  pivot_wider(names_from = year,
+              values_from=n)
+
+f_clean |> group_by(grade, state, year) |> summarize(mean.pv= mean(pVal)) |> 
+  pivot_wider(names_from = year,
+              values_from=mean.pv) |>
+  filter(state=="NY")
+
+f_clean |> group_by(grade, state, year) |> summarize(mean.pv= mean(pVal)) |> 
+  pivot_wider(names_from = year,
+              values_from=mean.pv) |>
+  filter(state=="Texas")
+
 
 tab2_3 <- f |> dplyr::select(grade,year) %>%
                       tbl_cross(row = grade,
