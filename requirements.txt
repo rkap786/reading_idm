@@ -1,0 +1,3 @@
+transformers
+datasets>=2.16.0
+embed_text_package @ git+https://github.com/stair-lab/embedder.git
