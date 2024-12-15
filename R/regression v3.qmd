@@ -10,12 +10,12 @@ library(tidyverse)
 library(dplyr)
 library(caret)
 library(glmnet)
+library(knitr)
 setwd("/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/")
 source("Code/reading_idm/R/getAbility.R")
 source("Code/reading_idm/R/Relasticnet.R")
 
 ```
-
 
 ### Data processing
 
@@ -43,13 +43,11 @@ f =f |>
   select(-pass_text_underline_yn,-pass_text_italics_yn,
                         -pass_text_bold_yn, -pass_text_fn_yn,-numPara,  -Passage, -starts_with("option_"), -QuestionText)
 
-
+#f= f[1:1053,]
 #f= f |> na.omit()
 ```
 
-
-
-#### pvalue IRT coming from NWEA for NY and Texas for Texas 
+#### pvalue IRT coming from NWEA for NY and Texas for Texas
 
 ```{r}
 
@@ -79,8 +77,8 @@ f= f |> dplyr::select(-ability)
 #### Get constant pval
 
 ### Convert ability to theta
-ny.adj.mat= getlineardiff(nwea_ny_ability,f, state="NY", start=0.3, end=0.7)
-tx.adj.mat= getlineardiff(tx_ability,f, state="Texas", start=0.3, end=0.7)
+ny.adj.mat= getlinearscale(nwea_ny_ability,f, state="NY", start=0.3, end=0.7)
+tx.adj.mat= getlinearscale(tx_ability,f, state="Texas", start=0.3, end=0.7)
 adj.states = bind_rows(ny.adj.mat, tx.adj.mat)
 
 f= left_join(f, adj.states)
@@ -88,14 +86,12 @@ f$pVal.cons= f$pVal - f$mean.pv
 f =f |> dplyr::select(-mean.pv)
 
 f= f |> rename(pVal.unadj= pVal)
+# f= f[1:1053,]
 f= f |> na.omit()
 
 ```
 
 ```{r}
-
-```{r}
-
 
 
 g1= f |> dplyr::select(grade, starts_with("pVal")) |>
@@ -129,25 +125,21 @@ ggsave("Code/reading_idm/R/plots/pvalbygrade.png", g, width = 14, height = 8)
 
 ```
 
+### Add embeddings
 
-```
-
-
-### Add  embeddings
 Merge with embeddings
 
 ```{r}
 
-
-
-# ### PCA embeddings
+#### PCA embeddings
 embed.bert= read_csv("Data/Embeddings/question_alldistractors_embed.csv")
 names(embed.bert)= c("id",paste0("embed.bert", 1:768), "PassNumUnq", "QNoUnq")
 embed.bert = embed.bert |> select(-id)
 
 #f.with.embed= merge(f,embed.bert)
 
-### PCA embeddings
+##########ALTERNATE
+### PCA embeddings 
 #embed= f.with.embed |> dplyr::select(starts_with("embed"))
 f_all_options=embed.bert |> select(-PassNumUnq, -QNoUnq)
 pca_embeddings_80= getpc(f_all_options)
@@ -156,8 +148,6 @@ pca_embeddings_80['PassNumUnq']=embed.bert$PassNumUnq
 pca_embeddings_80['QNoUnq']=embed.bert$QNoUnq
 
 #f.with.embed= left_join(f.with.embed,pca_embeddings_80)
-
-
 
 #### Without passage
 
@@ -181,14 +171,6 @@ f.embed.merged.tag = bind_cols(f.embed.correct, f.embed.optionembed1.tag, f.embe
 nc=ncol(f.embed.merged.tag)
 names(f.embed.merged.tag)= c(paste0("embed.bert", 1:(nc)))
 
-
-
-
-#f.embed.merged.tag= bind_cols(f.embed.merged.tag,pca_embeddings_80)
-
-
-#f.embed.merged.tag= left_join(f,f.embed.merged.tag)
-
 ### Alternate PCA embeddings
 pca_embeddings_80_tag= getpc(f.embed.merged.tag)
 vars.embed.pca.tag= names(pca_embeddings_80_tag)
@@ -206,16 +188,11 @@ rm(embed.bert.id)
 
 ```
 
-
-
-
-
 # Ridge regression
 
 ## All variables except embeddings
 
 Turn average correct into easy, medium, hard buckets
-
 
 Generate three datasets: 1. Item charactersitics & language characteristics 2. Item characteristics only 3. Item charactersitics, embeddings & language characteristics
 
@@ -232,6 +209,172 @@ Generate three datasets: 1. Item charactersitics & language characteristics 2. I
 ### Merge embedding option 1
 f.with.embed= left_join(f, embed.bert) #f.embed.merged.tag
 f.with.embed= left_join(f.with.embed, pca_embeddings_80) #pca_embeddings_80_tag
+# f.with.embed= f.with.embed[1053,]
+
+vars = names(f.with.embed)
+vars.embed = vars[grep("embed", vars)]
+
+### item characteristics
+vars.fe=c("state", "year", "grade")
+#vars.fe=c()
+vars.chars= c("ques_text_highlight_yn","ques_text_ref_yn", "ques_order","pass_highlight_yn")
+vars.outcome=c("pVal.cons", "pVal.irt", "pVal.unadj")
+vars.id=c("PassNumUnq", "QNoUnq")
+vars.lang= setdiff(names(f.with.embed),
+                   c(vars.fe, vars.embed,vars.chars, vars.outcome, vars.id, vars.embed.pca))
+
+
+
+## Unadjusted results
+f.input= f.with.embed
+f.input$pVal= f.input$pVal.unadj
+
+
+#Models
+res_fe= fnc_reg_elasticNet(f.input,
+                             c("pVal", c("state", "grade", "year"))) # without language
+
+res_item= fnc_reg_elasticNet(f.input,
+                             c("pVal", c(vars.chars))) # without language metrics
+res_lang= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.lang))) ## everything except embedding
+res_item_embed= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.embed))) ## embeddings only
+
+# res_item_embed_pca= fnc_reg_elasticNet(f.input, 
+#                               c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
+
+res_item_all= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.chars,
+                                         vars.lang, vars.embed)))
+
+res_item_all_pca= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.chars,
+                                         vars.lang, vars.embed.pca)))
+
+
+res_unadj= bind_rows(res_fe, res_item, res_lang, res_item_embed, res_item_all, res_item_all_pca)
+
+res_unadj= round(res_unadj,2)
+res_unadj= bind_cols(type=rep("Unadjusted",nrow(res_unadj)),model=c("State, Grade, Year", "Only assessment characteristics ", "Only text analysis metrics", 
+"Only BERT embeddings", 
+"Assessment characteristics, text analysis metrics, & BERT embeddings", 
+"Assessment characteristics, text analysis metrics, & PCA on BERT embeddings"), res_unadj)
+
+#res_pca_results= bind_rows(res_lang_item_pcaembed, res_lang_item_pcaembed2)
+
+### IRT pvalues
+f.input= f.with.embed
+f.input$pVal= f.input$pVal.irt
+
+
+#Models
+res_fe= fnc_reg_elasticNet(f.input,
+                             c("pVal", c("state", "grade", "year")))
+res_item= fnc_reg_elasticNet(f.input,
+                             c("pVal", c(vars.chars))) # without language metrics
+res_lang= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.lang))) ## everything except embedding
+res_item_embed= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.embed))) ## embeddings only
+
+# res_item_embed_pca= fnc_reg_elasticNet(f.input, 
+#                               c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
+
+res_item_all= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.chars,
+                                         vars.lang, vars.embed)))
+
+res_item_all_pca= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.chars,
+                                         vars.lang, vars.embed.pca)))
+
+
+res_irt= bind_rows(res_fe, res_item, res_lang, res_item_embed, 
+                     res_item_all, res_item_all_pca)
+
+res_irt= round(res_irt,2)
+res_irt= bind_cols(type=rep("IRT",nrow(res_irt)),model=c("State, Grade, Year","Only item descriptives", "Only text analysis metrics", 
+"Only BERT embeddings", 
+"Item descriptions, text analysis metrics, & BERT embeddings", 
+"Item descriptions, text analysis metrics, & PCA on BERT embeddings"), res_irt)
+
+
+
+### Constant adjustment
+f.input= f.with.embed
+f.input$pVal= f.input$pVal.cons
+
+
+#Models
+
+res_fe= fnc_reg_elasticNet(f.input,
+                             c("pVal", c("state", "grade", "year")))
+
+
+res_item= fnc_reg_elasticNet(f.input,
+                             c("pVal", c(vars.chars))) # without language metrics
+res_lang= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.lang))) ## everything except embedding
+res_item_embed= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.embed))) ## embeddings only
+
+# res_item_embed_pca= fnc_reg_elasticNet(f.input, 
+#                               c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
+
+res_item_all= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.chars,
+                                         vars.lang, vars.embed)))
+
+res_item_all_pca= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.chars,
+                                         vars.lang, vars.embed.pca)))
+
+
+res_cons= bind_rows(res_fe,res_item, res_lang, res_item_embed, 
+                     res_item_all, res_item_all_pca)
+
+res_cons= round(res_cons,2)
+res_cons= bind_cols(type=rep("Cons",nrow(res_cons)),model=c("State, Grade, Year","Only item descriptives", "Only text analysis metrics", 
+"Only BERT embeddings", 
+"Item descriptions, text analysis metrics, & BERT embeddings", 
+"Item descriptions, text analysis metrics, & PCA on BERT embeddings"), res_cons)
+
+
+
+#View(res_cons)
+kable(res_unadj[,-1], format="latex")
+kable(res_cons[,-1], format="latex")
+kable(res_irt[,-1], format="latex")
+res= bind_rows(res_unadj, res_cons, res_irt) 
+
+write_csv(res, "Results/elasticnet_bert_oneset.csv")
+#write_csv(res, "Results/elasticnet_bert_oneset_1053.csv")
+# res = read_csv("Results/elasticnet_bert_oneset.csv")
+# kable(res[-1], format="latex")
+
+
+
+```
+
+### Save model for Shiny
+
+```{r}
+
+  
+```
+
+
+
+### Alternate PCA embeddings
+
+```{r}
+
+
+
+### Merge embedding option 1
+f.with.embed= left_join(f, f.embed.merged.tag) #f.embed.merged.tag
+f.with.embed= left_join(f.with.embed, pca_embeddings_80_tag) #pca_embeddings_80_tag
 
 vars = names(f.with.embed)
 vars.embed = vars[grep("embed", vars)]
@@ -371,41 +514,33 @@ kable(res_irt[,-1], format="latex")
 res= bind_rows(res_unadj, res_cons, res_irt) 
 
 
-write_csv(res, "Results/elasticnet_bert_oneset.csv")
+write_csv(res, "Results/elasticnet_bert_merged.csv")
 
-```
-
-
-
-### Alternate PCA embeddings
-```{r}
-
-
+# res2 = read_csv("Results/elasticnet_bert_merged.csv")
+# kable(res2[-1], format="latex")
 
 
 ```
-
-
 
 #### Alternate ridge with new embeddings
 
 ```{r}
 
-
+res1= read_csv("Results/elasticnet_bert_oneset.csv")
+res2= read_csv("Results/elasticnet_bert_merged.csv")
 
 
 
 ```
-
 
 #### Alternate ridge with Llama
 
 ```{r}
 #### Llama embeddings
 
+# write_csv(f, "Data/Data/Processed/file-1053items.csv")
 
-f.full= f
-f= f[1:1053,] #we dont have embeddings for Texas G3 2022 for now
+# glimpse(f)
 
 
 embed.llama= read_csv("Data/Embeddings/llama_embed.csv")
@@ -413,33 +548,38 @@ embed.llama$perm= rep(1:24, 1053)
 embed.llama = embed.llama |> filter(perm==1) |> dplyr::select(-perm)
 
 names(embed.llama)= c(paste0("embed.llama", 1:4098))
+
 #embed.bert = embed.bert |> select(-id)
 
-f.with.embed= bind_cols(f,embed.llama)
 
 ### Alternate PCA embeddings
-pca_embeddings_80= getpc(embed.llama)
-vars.embed.pca= names(pca_embeddings_80)
-f.with.embed= bind_cols(f.with.embed,pca_embeddings_80)
+pca_embeddings_80_llama= getpc(embed.llama)
+
+
 
 
 
 ```
 
-
 ```{r}
-res_unadj_prev2=res_unadj
-res_cons_prev2=res_cons
-res_irt_prev2= res_irt
 
-vars = names(f.with.embed)
-vars.embed = vars[grep("embed", vars)]
+f= read_csv("Data/Data/Processed/file-1053items.csv")
+f.with.embed= bind_cols(f, embed.llama) #f.embed.merged.tag
+f.with.embed= bind_cols(f.with.embed, pca_embeddings_80_llama) #pca_embeddings_80_tag
+
+
+f= f |> na.omit()
+
+
 
 ### item characteristics
 vars.fe=c("state", "year", "grade")
+#vars.fe=c()
 vars.chars= c("ques_text_highlight_yn","ques_text_ref_yn", "ques_order","pass_highlight_yn")
 vars.outcome=c("pVal.cons", "pVal.irt", "pVal.unadj")
 vars.id=c("PassNumUnq", "QNoUnq")
+vars.embed.pca= names(pca_embeddings_80_llama)
+vars.embed= names(embed.llama)
 vars.lang= setdiff(names(f.with.embed),
                    c(vars.fe, vars.embed,vars.chars, vars.outcome, vars.id, vars.embed.pca))
 
@@ -448,36 +588,36 @@ vars.lang= setdiff(names(f.with.embed),
 ## Unadjusted results
 f.input= f.with.embed
 f.input$pVal= f.input$pVal.unadj
-vars_select=c("pVal", c(vars.chars,vars.lang))
 
 
 #Models
-res_item= fnc_reg_elasticNet(f.input,
-                             c("pVal", c(vars.fe,vars.chars))) # without language metrics
-res_lang= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.lang))) ## everything except embedding
-res_item_embed= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.embed))) ## embeddings only
+res_fe= fnc_reg_elasticNet(f.input,
+                             c("pVal", c("state", "grade", "year"))) # without language
 
-res_item_embed_pca= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
+res_item= fnc_reg_elasticNet(f.input,
+                             c("pVal", c(vars.chars))) # without language metrics
+res_lang= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.lang))) ## everything except embedding
+res_item_embed= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.embed))) ## embeddings only
+
+# res_item_embed_pca= fnc_reg_elasticNet(f.input, 
+#                               c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
 
 res_item_all= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.chars,
+                              c("pVal",c(vars.chars,
                                          vars.lang, vars.embed)))
 
 res_item_all_pca= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.chars,
+                              c("pVal",c(vars.chars,
                                          vars.lang, vars.embed.pca)))
 
 
-res_unadj= bind_rows(res_item, res_lang, res_item_embed, res_item_embed_pca, 
-                     res_item_all, res_item_all_pca)
+res_unadj= bind_rows(res_fe, res_item, res_lang, res_item_embed, res_item_all, res_item_all_pca)
 
 res_unadj= round(res_unadj,2)
-res_unadj= bind_cols(type=rep("Unadjusted",nrow(res_unadj)),model=c("Only assessment characteristics", "Only text analysis metrics", 
+res_unadj= bind_cols(type=rep("Unadjusted",nrow(res_unadj)),model=c("State, Grade, Year", "Only assessment characteristics ", "Only text analysis metrics", 
 "Only LlAMA embeddings", 
-"Only PCA LlAMA embeddings", 
 "Assessment characteristics, text analysis metrics, & LlAMA embeddings", 
 "Assessment characteristics, text analysis metrics, & PCA on LlAMA embeddings"), res_unadj)
 
@@ -489,34 +629,35 @@ f.input$pVal= f.input$pVal.irt
 
 
 #Models
+res_fe= fnc_reg_elasticNet(f.input,
+                             c("pVal", c("state", "grade", "year")))
 res_item= fnc_reg_elasticNet(f.input,
-                             c("pVal", c(vars.fe,vars.chars))) # without language metrics
+                             c("pVal", c(vars.chars))) # without language metrics
 res_lang= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.lang))) ## everything except embedding
+                              c("pVal",c(vars.lang))) ## everything except embedding
 res_item_embed= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.embed))) ## embeddings only
+                              c("pVal",c(vars.embed))) ## embeddings only
 
-res_item_embed_pca= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
+# res_item_embed_pca= fnc_reg_elasticNet(f.input, 
+#                               c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
 
 res_item_all= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.chars,
+                              c("pVal",c(vars.chars,
                                          vars.lang, vars.embed)))
 
 res_item_all_pca= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.chars,
+                              c("pVal",c(vars.chars,
                                          vars.lang, vars.embed.pca)))
 
 
-res_irt= bind_rows(res_item, res_lang, res_item_embed, res_item_embed_pca, 
+res_irt= bind_rows(res_fe, res_item, res_lang, res_item_embed, 
                      res_item_all, res_item_all_pca)
 
 res_irt= round(res_irt,2)
-res_irt= bind_cols(type=rep("IRT",nrow(res_irt)),model=c("Only assessment characteristics", "Only text analysis metrics", 
+res_irt= bind_cols(type=rep("IRT",nrow(res_irt)),model=c("State, Grade, Year","Only item descriptives", "Only text analysis metrics", 
 "Only LlAMA embeddings", 
-"Only PCA LlAMA embeddings", 
-"Assessment characteristics, text analysis metrics, & LlAMA embeddings", 
-"Assessment characteristics, text analysis metrics, & PCA on LlAMA embeddings"), res_irt)
+"Item descriptions, text analysis metrics, & LlAMA embeddings", 
+"Item descriptions, text analysis metrics, & PCA on LlAMA embeddings"), res_irt)
 
 
 
@@ -526,34 +667,38 @@ f.input$pVal= f.input$pVal.cons
 
 
 #Models
-res_item= fnc_reg_elasticNet(f.input,
-                             c("pVal", c(vars.fe,vars.chars))) # without language metrics
-res_lang= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.lang))) ## everything except embedding
-res_item_embed= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.embed))) ## embeddings only
 
-res_item_embed_pca= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
+res_fe= fnc_reg_elasticNet(f.input,
+                             c("pVal", c("state", "grade", "year")))
+
+
+res_item= fnc_reg_elasticNet(f.input,
+                             c("pVal", c(vars.chars))) # without language metrics
+res_lang= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.lang))) ## everything except embedding
+res_item_embed= fnc_reg_elasticNet(f.input, 
+                              c("pVal",c(vars.embed))) ## embeddings only
+
+# res_item_embed_pca= fnc_reg_elasticNet(f.input, 
+#                               c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
 
 res_item_all= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.chars,
+                              c("pVal",c(vars.chars,
                                          vars.lang, vars.embed)))
 
 res_item_all_pca= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.fe,vars.chars,
+                              c("pVal",c(vars.chars,
                                          vars.lang, vars.embed.pca)))
 
 
-res_cons= bind_rows(res_item, res_lang, res_item_embed, res_item_embed_pca, 
+res_cons= bind_rows(res_fe,res_item, res_lang, res_item_embed, 
                      res_item_all, res_item_all_pca)
 
 res_cons= round(res_cons,2)
-res_cons= bind_cols(type=rep("Cons",nrow(res_cons)),model=c("Only assessment characteristics", "Only text analysis metrics", 
+res_cons= bind_cols(type=rep("Cons",nrow(res_cons)),model=c("State, Grade, Year","Only item descriptives", "Only text analysis metrics", 
 "Only LlAMA embeddings", 
-"Only PCA LlAMA embeddings", 
-"Assessment characteristics, text analysis metrics, & LlAMA embeddings", 
-"Assessment characteristics, text analysis metrics, & PCA on LlAMA embeddings"), res_cons)
+"Item descriptions, text analysis metrics, & LlAMA embeddings", 
+"Item descriptions, text analysis metrics, & LlAMA on BERT embeddings"), res_cons)
 
 
 
@@ -561,11 +706,41 @@ res_cons= bind_cols(type=rep("Cons",nrow(res_cons)),model=c("Only assessment cha
 kable(res_unadj[,-1], format="latex")
 kable(res_cons[,-1], format="latex")
 kable(res_irt[,-1], format="latex")
+res= bind_rows(res_unadj, res_cons, res_irt) 
+write_csv(res, "Results/elasticnet_llama_oneset_1053.csv")
 
 ```
 
 
+```{r}
 
+
+res_bert_1053= read_csv("Results/elasticnet_bert_oneset_1053.csv")
+res_llama_1053= read_csv("Results/elasticnet_llama_oneset_1053.csv")
+
+res_bert_1053=res_bert_1053 |> filter(str_detect(model,"BERT") | str_detect(model,"BERT") )
+res_llama_1053=res_llama_1053 |> filter(str_detect(model,"LlAMA"))
+
+bind_rows(res_bert_1053, res_llama_1053) |> 
+  filter(type=="Unadjusted") |> 
+  dplyr::select(-type, -rmse_ind) |>
+  arrange(model) |> 
+  kable(format="latex")
+
+bind_rows(res_bert_1053, res_llama_1053) |> 
+  filter(type=="Cons") |> 
+  dplyr::select(-type, -rmse_ind) |>
+  arrange(model) |> 
+  kable(format="latex")
+
+bind_rows(res_bert_1053, res_llama_1053) |> 
+  filter(type=="IRT") |> 
+  dplyr::select(-type, -rmse_ind) |>
+  arrange(model) |> 
+  kable(format="latex")
+
+
+```
 
 
 

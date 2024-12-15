@@ -5,8 +5,9 @@ library(reticulate) # For calling Python scripts
 setwd('/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Code/reading_idm/R/shiny')
 
 # Use the system's Python executable or configure Python path
+#use_virtualenv("venv")
 use_python("/usr/bin/python3")  # Adjust to your Python path if needed
-model= readRDS("/Users/radhika/Documents/shiny/model.rds")
+model= readRDS("model.rds")
 
 # Sample data table to display
 difficulty_table <- data.frame(

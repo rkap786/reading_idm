@@ -15,7 +15,7 @@ getlinearscale= function(th.scale, f, state="Texas", start=0.3, end=0.7){
   growth= growth/totalgr
   nr=length(growth) #length of growth matrix
   
-  #f.state= f |> filter(state==(!!state))
+  f.state= f |> filter(state==(!!state))
   grlist=sort(unique(f$grade))
   pval.state.grade= f.state |> group_by(grade) |> summarize(mean.pv= mean(pVal))
   pval.state.grade= pval.state.grade[,2]
