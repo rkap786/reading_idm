@@ -57,7 +57,7 @@ def main():
     distractors = inputs.get("Distractors", "")
     
     # Combine inputs
-    combined_input = [f"{question} {passage} {distractors}"]
+    combined_input = [f"{question}\n{distractors}\n{passage}"]
     #print(combined_input)
     embedding = vectorize_with_pretrained_embeddings(combined_input)
     embedding_flat = embedding.flatten()  # Flatten to a 1D array
