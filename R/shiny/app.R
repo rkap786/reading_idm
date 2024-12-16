@@ -2,6 +2,9 @@
 library(shiny)
 library(jsonlite)  # For JSON conversion
 library(reticulate) # For calling Python scripts
+library(caret)
+library(dplyr)
+
 setwd('/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Code/reading_idm/R/shiny')
 
 # Use the system's Python executable or configure Python path
