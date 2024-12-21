@@ -9,6 +9,7 @@ Item difficulty is measured as percent correct responses or p-value. This value 
 
 
 | Column Name            | Data Type | Description                                                    |
+|------------------------|-----------|------------------------------------------------------------------|
 | pVal                   | int       | % correct responses (mean at the grade level for given state)  |
 
 
