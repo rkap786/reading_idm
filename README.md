@@ -144,6 +144,7 @@ BERT embeddings are generated for the following text combinations:
 |RDL2|	int|	Coh-Metrix L2 Readability|
 
 3. **Assessment characteristics**
+   
 | Column Name            | Data Type | Description                                                      |
 |------------------------|-----------|------------------------------------------------------------------|
 | pass_highlight_yn      | int       | Indicator if the passage text is highlighted (1 = Yes, 0 = No) |
