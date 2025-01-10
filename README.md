@@ -1,22 +1,27 @@
 # reading comprehension item difficulty modeling
-Modeling difficulty of reading comprehension items
-### Cleaned data file for embeddings 
-File name: data_passage_ques_options_pv.csv
-Passage information: Passage, Question text, and Options text (Options 1-4)
-Pvalue: average for question
-
-### Cleaned data file with other information about passage and questions
-File name: data_qual_data.csv
-
+Project goal: Model and predict difficulty of reading comprehension items
 
 ### Cleaning data
-Raw file: Combined data_edit - Data_combined_edit.csv
-File for processing: R/Process data.qmd
+File for processing the data : R/Process data.qmd
 
-### BERT embeddings
-Generated from last layer + averaged across embedding length
-Generates embeddings for each sentence with d = 768
-Stored under Data. Files:
+### Predicted value
+Item difficulty is measured as percent correct responses or p-value. This value is adjusted to the logit scale
+
+
+| Column Name            | Data Type | Description                                                    |
+|------------------------|-----------|------------------------------------------------------------------|
+| pVal                   | int       | % correct responses (mean at the grade level for given state)  |
+
+
+
+### Features used in prediction
+**1. Embeddings**
+**(a) BERT embeddings**
+- Generated from last layer + averaged across embedding length
+- Generates embeddings for each sentence with d = 768
+- Text inputs are truncated at 512 characters if length exceeds limit
+
+BERT embeddings are generated for the following text combinations:
 1. question_embed_correct.csv: Embeddings for question text + correct answer
 2. question_embed_dis1.csv: Embeddings for question text + distractor1
 3. question_embed_dis2.csv: Embeddings for question text + distractor2
@@ -27,32 +32,18 @@ Stored under Data. Files:
 8. optionembed2.csv: Embeddings for distractor2 text ONLY
 9. optionembed3.csv: Embeddings for distractor3 text ONLY
 
-### Data dictionary
+**(b) LlAMA embeddings (8b parameters model)**
+- Generated from last layer
+- Generates embeddings for each sentence with d = 4096
+
+**2. Text analysis features**
 
 | Column Name            | Data Type | Description                                                      |
 |------------------------|-----------|------------------------------------------------------------------|
-| pdfname                | string    | Name of the PDF document from which the data was extracted       |
-| PassNumUnq             | string    | Unique identifier for each passage within the document           |
 | Passage                | string    | Text of the passage                                              |
-| pass_text_bold_yn      | int       | Indicator if the passage text contains bold formatting (1 = Yes, 0 = No) |
-| pass_text_italics_yn   | int       | Indicator if the passage text contains italics formatting (1 = Yes, 0 = No) |
-| pass_text_fn_yn        | int       | Indicator if the passage text contains footnotes (1 = Yes, 0 = No) |
-| pass_text_underline_yn | int       | Indicator if the passage text contains underlining (1 = Yes, 0 = No) |
-| pass_highlight_yn      | int       | Indicator if the passage text is highlighted (1 = Yes, 0 = No) |
 | numPara                | int       | Number of paragraphs in the passage                              |
 | PassageWordCount.gen   | int       | Word count of the passage                                       |
-| ques_text_para_yn      | int       | Indicator if the question text includes paragraphs (1 = Yes, 0 = No) |
-| ques_text_sentence_yn  | int       | Indicator if the question text includes complete sentences (1 = Yes, 0 = No) |
-| option_correct_ans     | string    | Text of the correct answer option                               |
-| option_distractor1     | object    | Text of the first distractor (incorrect answer option)          |
-| option_distractor2     | object    | Text of the second distractor                                   |
-| option_distractor3     | object    | Text of the third distractor                                    |
-| ques_order             | int       | Order of the question within the passage                        |
-| year                   | int       | Year of the document                                            |
-| grade                  | string    | Grade level relevant to the passage or question                 |
-| state                  | object    | State from which the passage or document originates             |
 | fk                     | int       | Flesch Kincaid score (generated from Python package)           |
-| pVal                   | int       | % correct responses (mean at the grade level for given state)  |
 |DESPL|	int|	Paragraph length, number of sentences in a paragraph, mean|
 |DESPLd|	int|	Paragraph length, number of sentences in a pragraph, standard deviation|
 |DESSL|	int|	Sentence length, number of words, mean|
@@ -154,3 +145,16 @@ Stored under Data. Files:
 |WRDHYPv|	int|	Hypernymy for verbs, mean|
 |WRDHYPnv|	int|	Hypernymy for nouns and verbs, mean|
 |RDL2|	int|	Coh-Metrix L2 Readability|
+
+3. **Assessment characteristics**
+   
+| Column Name            | Data Type | Description                                                      |
+|------------------------|-----------|------------------------------------------------------------------|
+| pass_highlight_yn      | int       | Indicator if the passage text is highlighted (1 = Yes, 0 = No) |
+| ques_text_para_yn      | int       | Indicator if the question text includes paragraphs (1 = Yes, 0 = No) |
+| ques_text_sentence_yn  | int       | Indicator if the question text includes complete sentences (1 = Yes, 0 = No) |
+| ques_highlight_yn      | int       | Indicator if the question text includes highlighted text (1 = Yes, 0 = No) |
+| ques_order             | int       | Order of the question within the passage                        |
+
+
+
