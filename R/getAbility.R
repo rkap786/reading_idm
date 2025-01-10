@@ -1,6 +1,6 @@
 
 getlogitdiff= function(pv, th.scale) {
-  b= th.scale  - log(pv/ (1-pv))
+  b= -th.scale  + log(pv/ (1-pv))
   return(b)
 }
 
