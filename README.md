@@ -10,7 +10,8 @@ Item difficulty is measured as percent correct responses or p-value. This value 
 
 | Column Name            | Data Type | Description                                                    |
 |------------------------|-----------|------------------------------------------------------------------|
-| pVal                   | int       | % correct responses (mean at the grade level for given state)  |
+| pVal.irt                   | int       | pValue converted to a vertical logit scale using Rasch model  |
+| pValue                     | int       | % correct responses (mean at the grade level for given state)  |
 
 
 
@@ -36,7 +37,12 @@ BERT embeddings are generated for the following text combinations:
 - Generated from last layer
 - Generates embeddings for each sentence with d = 4096
 
-**2. Text analysis features**
+- **(c) ModernBERT**
+- Generated from last layer + averaged across embedding length
+- Generates embeddings for each sentence with d = 768
+- Did not truncate text input
+
+**2. Linguistic (corpus analysis) features**
 
 | Column Name            | Data Type | Description                                                      |
 |------------------------|-----------|------------------------------------------------------------------|
@@ -146,7 +152,7 @@ BERT embeddings are generated for the following text combinations:
 |WRDHYPnv|	int|	Hypernymy for nouns and verbs, mean|
 |RDL2|	int|	Coh-Metrix L2 Readability|
 
-3. **Assessment characteristics**
+3. **Assessment features**
    
 | Column Name            | Data Type | Description                                                      |
 |------------------------|-----------|------------------------------------------------------------------|
@@ -156,5 +162,6 @@ BERT embeddings are generated for the following text combinations:
 | ques_highlight_yn      | int       | Indicator if the question text includes highlighted text (1 = Yes, 0 = No) |
 | ques_order             | int       | Order of the question within the passage                        |
 
-
+4. **Context features**
+State, Grade, Year for which p-values were reported
 
