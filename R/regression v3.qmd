@@ -40,17 +40,183 @@ for (vars in c(vars.yn, "year")) {
 }
 
 f =f |>
-  select(-pass_text_underline_yn,-pass_text_italics_yn,
+  dplyr::select(-pass_text_underline_yn,-pass_text_italics_yn,
                         -pass_text_bold_yn, -pass_text_fn_yn,-numPara,  -Passage, -starts_with("option_"), -QuestionText)
+
+
+full.data=f
 
 #f= f[1:1053,]
 #f= f |> na.omit()
 ```
 
+
+
+
+
+### Add embeddings
+
+Merge with embeddings
+
+
+```{r}
+
+#### PCA embeddings
+embed.bert= read_csv("Data/Embeddings/question_alldistractors_embed.csv")
+names(embed.bert)= c("id",paste0("embed.bert", 1:768), "PassNumUnq", "QNoUnq")
+embed.bert = embed.bert |> dplyr::select(-id)
+
+#f.with.embed= merge(f,embed.bert)
+
+##########ALTERNATE
+### PCA embeddings 
+#embed= f.with.embed |> dplyr::select(starts_with("embed"))
+f_all_options=embed.bert |> dplyr::select(-PassNumUnq, -QNoUnq)
+pca_embeddings_80= getpc(f_all_options)
+vars.embed.pca= paste0("bert.",names(pca_embeddings_80))
+names(pca_embeddings_80)= vars.embed.pca
+pca_embeddings_80['PassNumUnq']=embed.bert$PassNumUnq
+pca_embeddings_80['QNoUnq']=embed.bert$QNoUnq
+
+#f.with.embed= left_join(f.with.embed,pca_embeddings_80)
+
+# #### Without passage
+# 
+# f.embed.correct= read_csv("Data/Embeddings/option_embed_correct_tag.csv")
+# names(f.embed.correct)= c("id",paste0("embed.ques.cor", 1:768))
+# 
+# f.embed.optionembed1.tag= read_csv("Data/Embeddings/optionembed1_tag.csv")
+# names(f.embed.optionembed1.tag)= c("id",paste0("embed.ques.dis1", 1:768))
+# 
+# f.embed.optionembed2.tag= read_csv("Data/Embeddings/optionembed2_tag.csv")
+# names(f.embed.optionembed2.tag)= c("id",paste0("embed.ques.dis2", 1:768))
+# 
+# f.embed.optionembed3.tag= read_csv("Data/Embeddings/optionembed3_tag.csv")
+# names(f.embed.optionembed3.tag)= c("id",paste0("embed.ques.dis3", 1:768))
+# 
+# 
+# f.embed.merged.tag = bind_cols(f.embed.correct, f.embed.optionembed1.tag, f.embed.optionembed2.tag, f.embed.optionembed3.tag) |> 
+#   as.data.frame() |>
+#   select(-contains("id"))
+# 
+# nc=ncol(f.embed.merged.tag)
+# names(f.embed.merged.tag)= c(paste0("embed.bert", 1:(nc)))
+# 
+# ### Alternate PCA embeddings
+# pca_embeddings_80_tag= getpc(f.embed.merged.tag)
+# vars.embed.pca.tag= names(pca_embeddings_80_tag)
+
+## Get IDs
+embed.bert.id= read_csv("Data/Embeddings/question_alldistractors_embed.csv")
+names(embed.bert.id)= c("id",paste0("embed.bert", 1:768), "PassNumUnq", "QNoUnq")
+embed.bert.id=embed.bert.id |> dplyr::select("PassNumUnq", "QNoUnq")
+#f.embed.merged.tag=bind_cols(embed.bert.id,f.embed.merged.tag)
+
+#pca_embeddings_80_tag=full_join(embed.bert.id,pca_embeddings_80_tag)
+
+rm(embed.bert.id)
+
+
+```
+
+
+### Add Llama embeddings
+
+
+```{r}
+
+embed.llama= read_csv("Data/Embeddings/llama_embed.csv")
+embed.llama$perm= rep(1:24, 1053)
+embed.llama = embed.llama |> filter(perm==1) |> dplyr::select(-perm)
+names(embed.llama)=c("id", paste0("embed.llama", 1:4096), "score")
+
+
+embed.llama['PassNumUnq']=full.data$PassNumUnq[1:1053]
+embed.llama['QNoUnq']=full.data$QNoUnq[1:1053]
+embed.llama['grade']=full.data$grade[1:1053]
+embed.llama['year']=full.data$year[1:1053]
+embed.llama['state']=full.data$state[1:1053]
+embed.llama= embed.llama |> 
+  dplyr::select(-id, -score)
+
+#embed.bert = embed.bert |> select(-id)
+
+embed.llama.new= read_csv("Data/Embeddings/llama_embed_TexasGrade3_2022.csv")
+names(embed.llama.new)= c("id", "PassNumUnq","QNoUnq","permute_id","text","score", paste0("embed.llama", 1:4096))
+
+embed.llama.new$grade= rep("Grade3", nrow(embed.llama.new))
+embed.llama.new$year= as.factor(rep(2022, nrow(embed.llama.new)))
+embed.llama.new$state= rep("Texas", nrow(embed.llama.new))
+embed.llama.new= embed.llama.new |> filter(permute_id==0) |>
+  dplyr::select(-id, -permute_id, -text, -score)
+
+embed.llama.merged= bind_rows(embed.llama, embed.llama.new)
+
+### Alternate PCA embeddings
+embed.llama.forpca= embed.llama.merged |> dplyr::select(starts_with("embed")) 
+dim(embed.llama.forpca)
+pca_embeddings_80_llama= getpc(embed.llama.forpca)
+names(pca_embeddings_80_llama) = paste0("llama.PC.", 1:ncol(pca_embeddings_80_llama))
+pca_embeddings_80_llama['PassNumUnq']=embed.llama.merged$PassNumUnq
+pca_embeddings_80_llama['QNoUnq']=embed.llama.merged$QNoUnq
+
+
+
+```
+
+
+### Add Modern BERT embeddings
+
+
+```{r}
+
+embed.mbert= read_csv("Data/Embeddings/question_alldistractors_embed_mbert.csv")
+
+names(embed.mbert)=c("id", paste0("embed.mbert", 1:768), "PassNumUnq", "QNoUnq")
+embed.mbert= embed.mbert |> dplyr::select(-id)
+
+
+### PCA embeddings
+embed.mbert.forpca= embed.mbert |> dplyr::select(starts_with("embed")) 
+dim(embed.mbert.forpca)
+pca_embeddings_80_mbert= getpc(embed.mbert.forpca)
+dim(pca_embeddings_80_mbert)
+names(pca_embeddings_80_mbert) = paste0("mbert.PC.", 1:ncol(pca_embeddings_80_mbert))
+pca_embeddings_80_mbert['PassNumUnq']=embed.mbert$PassNumUnq
+pca_embeddings_80_mbert['QNoUnq']=embed.mbert$QNoUnq
+
+
+```
+
+### Add all embeddings
+
+```{r}
+
+options(expressions = 5e5)
+
+
+### Merge embedding option 1
+f.with.embed= left_join(f, embed.bert) #f.embed.merged.tag
+f.with.embed= left_join(f.with.embed, pca_embeddings_80) #pca_embeddings_80_tag
+f.with.embed= left_join(f.with.embed, embed.llama.merged) #pca_embeddings_80_tag
+f.with.embed= left_join(f.with.embed, pca_embeddings_80_llama) #pca_embeddings_80_tag
+f.with.embed= left_join(f.with.embed, embed.mbert) #pca_embeddings_80_tag
+f.with.embed= left_join(f.with.embed, pca_embeddings_80_mbert) #pca_embeddings_80_tag
+
+
+write_csv(f.with.embed, "Data/Data/Processed/file-allitems_allembed.csv")
+```
+
+
+### Dataset copy
+
+
+
 #### pvalue IRT coming from NWEA for NY and Texas for Texas
 
 ```{r}
 
+f.with.embed= read_csv("Data/Data/Processed/file-allitems_allembed.csv")
 ### Scales
 tx_ability=c(1467, 1552, 1592, 1634, 1669, 1698) #meets grade level performance
 nwea_ny_ability=c(200.74, 204.83, 210.98, 215.36, 216.81, 220.93)
@@ -64,91 +230,238 @@ tx_ability = (tx_ability-1398.5930)/143.7195
 ### Get pval IRT directly for each item
 
 nwea.ability.mat= data.frame(bind_cols(grade=grlist, state=rep("NY", 6),ability=nwea_ny_ability))
-tx_ability_mat= data.frame(bind_cols(grade=grlist, state=rep("Texas", 6),ability=tx_ability)) 
+tx_ability_mat= data.frame(bind_cols(grade=grlist, state=rep("Texas", 6),ability=nwea_ny_ability)) 
 ability.mat= bind_rows(nwea.ability.mat,tx_ability_mat)
 names(f)
 #f= f |> select(-pVal.irt, -nwea.ability)
-f= left_join(f, ability.mat)
-f$pVal.irt = getlogitdiff(pv=f$pVal, th.scale = f$ability)
+f.with.embed= left_join(f.with.embed, ability.mat)
+f.with.embed$pVal.irt = getlogitdiff(pv=f.with.embed$pVal, th.scale = f.with.embed$ability)
 
-f= f |> dplyr::select(-ability)
+f.with.embed= f.with.embed |> dplyr::select(-ability)
+
+f.with.embed$pVal.unadj= f.with.embed$pVal
+
 #
 
 #### Get constant pval
 
 ### Convert ability to theta
-ny.adj.mat= getlinearscale(nwea_ny_ability,f, state="NY", start=0.3, end=0.7)
-tx.adj.mat= getlinearscale(tx_ability,f, state="Texas", start=0.3, end=0.7)
-adj.states = bind_rows(ny.adj.mat, tx.adj.mat)
-
-f= left_join(f, adj.states)
-f$pVal.cons= f$pVal - f$mean.pv
-f =f |> dplyr::select(-mean.pv)
-
-f= f |> rename(pVal.unadj= pVal)
+# ny.adj.mat= getlinearscale(nwea_ny_ability,f.with.embed, state="NY", start=0.3, end=0.8)
+# tx.adj.mat= getlinearscale(tx_ability,f.with.embed, state="Texas", start=0.3, end=0.8)
+# adj.states = bind_rows(ny.adj.mat, tx.adj.mat)
+# 
+# f.with.embed= left_join(f.with.embed, adj.states)
+# f.with.embed$pVal.cons= f.with.embed$pVal - f.with.embed$mean.pv
+# f =f |> dplyr::select(-mean.pv)
+# 
+# f= f |> rename(pVal.unadj= pVal)
+#f$pVal.irt= -f$pVal.irt # we want easiness, not difficulty
 # f= f[1:1053,]
-f= f |> na.omit()
+
 
 ```
 
 ```{r}
 
 
-g1= f |> dplyr::select(grade, starts_with("pVal")) |>
-  ggplot(aes(grade, pVal.irt, fill=factor(grade), color=factor(grade))) + geom_boxplot(alpha=0.3) +
-  scale_fill_brewer(palette = "RdBu") + 
+g1= f.with.embed |> dplyr::select(grade, starts_with("pVal")) |>
+  ggplot(aes(grade, pVal.irt, fill=factor(grade))) + geom_boxplot(alpha=0.3) +
+  scale_fill_viridis_d()  + 
   labs(x= "", y= "pValue adjusted to logit scale") + 
   theme_classic() +
-  theme(legend.position = "bottom", legend.title=element_blank())
+  theme(text = element_text(size = 14), 
+        axis.text.x = element_text(face="bold"),
+        legend.position = "none", legend.title=element_blank())
 
-g2= f |> dplyr::select(grade, starts_with("pVal")) |>
-  ggplot(aes(grade, pVal.cons, fill=factor(grade), color=factor(grade))) + geom_boxplot(alpha=0.3) +
-  scale_fill_brewer(palette = "RdBu") + 
-  labs(x= "", y= "pValue adjusted between 0.3 & 0.7") + 
-  theme_classic() +
-  theme(legend.position = "bottom", legend.title=element_blank())
+# g2= f.with.embed |> dplyr::select(grade, starts_with("pVal")) |>
+#   ggplot(aes(grade, pVal.cons, fill=factor(grade))) + geom_boxplot(alpha=0.3) +
+#   scale_fill_viridis_d()  + 
+#   labs(x= "", y= "pValue adjusted between 0.3 & 0.8") + 
+#   theme_classic() +
+#   theme(legend.position = "bottom", legend.title=element_blank())
 
-g3= f |> dplyr::select(grade, starts_with("pVal")) |>
-  ggplot(aes(grade, pVal.unadj, fill=factor(grade), color=factor(grade))) + geom_boxplot(alpha=0.3) +
-  scale_fill_brewer(palette = "RdBu") + 
+g3= f.with.embed |> dplyr::select(grade, starts_with("pVal")) |>
+  ggplot(aes(grade, pVal.unadj, fill=factor(grade))) + geom_boxplot(alpha=0.3) +
+  scale_fill_viridis_d() + 
   labs(x= "", y= "pValue unadjusted") + 
   theme_classic() +
-  theme(legend.position = "bottom", legend.title=element_blank())
+  theme(text = element_text(size = 14),
+        axis.text.x = element_text(face="bold"),
+        legend.position = "none", legend.title=element_blank())
 
 library(ggpubr)
-g= ggarrange(g3, g2, g1, nrow=1, common.legend = TRUE, align = "hv")
-ggsave("Code/reading_idm/R/plots/pvalbygrade.png", g, width = 14, height = 8)
+g= ggarrange(g3, g1, nrow=1)
+ggsave("Code/reading_idm/R/plots/pvalbygrade.png", g, width = 20, height = 8)
 # 
 # f |> group_by(grade) |>
 #   summarise(meanfk= mean(fk, na.rm=T)) 
 
 
+
+
 ```
-
-### Add embeddings
-
-Merge with embeddings
 
 ```{r}
 
-#### PCA embeddings
-embed.bert= read_csv("Data/Embeddings/question_alldistractors_embed.csv")
-names(embed.bert)= c("id",paste0("embed.bert", 1:768), "PassNumUnq", "QNoUnq")
-embed.bert = embed.bert |> select(-id)
+library(viridis)
+library(cowplot)
 
-#f.with.embed= merge(f,embed.bert)
 
-##########ALTERNATE
-### PCA embeddings 
-#embed= f.with.embed |> dplyr::select(starts_with("embed"))
-f_all_options=embed.bert |> select(-PassNumUnq, -QNoUnq)
-pca_embeddings_80= getpc(f_all_options)
-vars.embed.pca= names(pca_embeddings_80)
-pca_embeddings_80['PassNumUnq']=embed.bert$PassNumUnq
-pca_embeddings_80['QNoUnq']=embed.bert$QNoUnq
+g4= f.with.embed |> dplyr::select(state, grade, pVal, pVal.irt) |> 
+  ggplot(aes(pVal, pVal.irt, color=grade, shape=state)) + geom_point() +
+  labs(x= "Original pValue", y= "pValue IRT scale") + 
+  scale_color_viridis_d() + 
+  theme_classic() +
+  theme(legend.position = "right", legend.title=element_blank(),
+        text = element_text(size = 14),
+        axis.text.x = element_text(face="bold")) 
 
-#f.with.embed= left_join(f.with.embed,pca_embeddings_80)
 
+g4_padded <- plot_grid(NULL, g4, NULL, ncol = 3, rel_widths = c(0.1, 0.4, 0.1))
+
+#gcombined= ggarrange(g4, g, ncol = 1, heights = c(0.7, 1),common.legend = TRUE, legend = "bottom")
+gcombined <- plot_grid(g4_padded, g, ncol = 1)
+ggsave("Code/reading_idm/R/plots/pvalconversion.png", gcombined)
+
+f.with.embed |> group_by(state, grade) |>
+  summarise(mean.pv=mean(pVal), mean.pv.irt=mean(pVal.irt), .groups="drop") 
+
+```
+
+
+```{r}
+
+```
+
+
+
+# Analysis
+
+```{r}
+
+f |> group_by(state, grade, year) |>
+  summarise(mean.pv=mean(pVal), .groups="drop") |>
+  arrange(state, grade, year) |>
+  pivot_wider(names_from=year, values_from=mean.pv) 
+
+```
+
+
+
+# Ridge regression
+
+## All variables except embeddings
+
+
+Generate three datasets: 1. Item charactersitics & language characteristics 2. Item characteristics only 3. Item charactersitics, embeddings & language characteristics
+
+```{r}
+### f.analysis, f.train, f.test - all vars except embeddings
+### f.analysis2 - without language metrics
+### f.analysis3 - everything
+### f.analysis4 - only embeddings
+### f.analysis.pca - PCA embeddings plus everything else
+#### Variable names
+### all embeddings
+# write_csv(f.with.embed, "/Users/radhika/Library/CloudStorage/GoogleDrive-rkap786@stanford.edu/My Drive/0. Projects - Stanford/Item generation/Code/sherlock/fwithembed.csv")
+
+# f.with.embed= f.with.embed[1053,]
+
+vars = names(f.with.embed)
+vars.embed.bert = vars[grep("embed.bert", vars)]
+vars.pca.bert = vars[grep("^bert\\.PC", vars)]
+vars.embed.llama = vars[grep("embed.llama", vars)]
+vars.pca.llama = vars[grep("llama.PC", vars)]
+vars.embed.mbert = vars[grep("embed.mbert", vars)]
+vars.pca.mbert = vars[grep("mbert.PC", vars)]
+
+
+### 
+
+
+### item characteristics
+vars.fe=c("state", "year", "grade")
+#vars.fe=c()
+vars.chars= c("ques_text_highlight_yn","ques_text_ref_yn", "ques_order","pass_highlight_yn")
+vars.outcome=c("pVal.cons", "pVal.irt", "pVal.unadj", "pVal")
+vars.id=c("PassNumUnq", "QNoUnq")
+vars.lang= setdiff(names(f.with.embed),
+                   c(vars.fe, vars.chars, vars.outcome, vars.id, vars.embed.bert, 
+                     vars.embed.llama, vars.pca.bert, vars.pca.llama,
+                     vars.embed.mbert, vars.pca.mbert))
+
+
+
+## Unadjusted results
+f.input= f.with.embed
+f.input$pVal= f.input$pVal.unadj
+
+res_unadj= fnc_compile_models(f.input, vars.chars, vars.lang, 
+                             vars.embed.bert, vars.embed.llama, 
+                             vars.pca.bert, vars.pca.llama, vars.embed.mbert, vars.pca.mbert)
+res_unadj= bind_cols(type=rep("IRT",nrow(res_unadj)),res_unadj)
+
+#res_pca_results= bind_rows(res_lang_item_pcaembed, res_lang_item_pcaembed2)
+
+### IRT pvalues
+f.input= f.with.embed
+f.input$pVal= f.input$pVal.irt
+
+
+#Models
+res_irt= fnc_compile_models(f.input, vars.chars, vars.lang, 
+                             vars.embed.bert, vars.embed.llama, 
+                             vars.pca.bert, vars.pca.llama, 
+                             vars.embed.mbert, vars.pca.mbert)
+
+res_irt= bind_cols(type=rep("IRT",nrow(res_irt)),res_irt)
+res= bind_rows(res_unadj, res_irt) 
+write_csv(res, "Results/elasticnet_bert_oneset.csv")
+
+# 
+# # ### Constant adjustment
+# f.input= f.with.embed
+# f.input$pVal= f.input$pVal.cons
+# 
+# res_cons= fnc_compile_models(f.input, vars.chars, vars.lang,
+#                              vars.embed.bert, vars.embed.llama,
+#                              vars.pca.bert, vars.pca.llama, vars.embed.mbert, vars.pca.mbert)
+# res_cons= bind_cols(type=rep("IRT",nrow(res_cons)),res_cons)
+# 
+
+# 
+# #View(res_cons)
+# kable(res_unadj[,-1], format="latex")
+# kable(res_cons[,-1], format="latex")
+# kable(res_irt[,-1], format="latex")
+#res= bind_rows(res_unadj, res_cons, res_irt) 
+
+# 
+
+#write_csv(res, "Results/elasticnet_bert_oneset_1053.csv")
+# res = read_csv("Results/elasticnet_bert_oneset.csv")
+# kable(res[-1], format="latex")
+
+
+
+```
+
+
+```{r}
+res_irt2=res_irt
+res_irt2= res_irt2 |> select(-type, -rmse_ind)
+kable(res_irt2, format="latex")
+
+```
+
+
+
+
+### Robustness of BERT embedding generation - other embedding generation methods
+
+```{r}
+
+## question and distractors separetely
 #### Without passage
 
 f.embed.correct= read_csv("Data/Embeddings/option_embed_correct_tag.csv")
@@ -175,204 +488,27 @@ names(f.embed.merged.tag)= c(paste0("embed.bert", 1:(nc)))
 pca_embeddings_80_tag= getpc(f.embed.merged.tag)
 vars.embed.pca.tag= names(pca_embeddings_80_tag)
 
-## Get IDs
-embed.bert.id= read_csv("Data/Embeddings/question_alldistractors_embed.csv")
-names(embed.bert.id)= c("id",paste0("embed.bert", 1:768), "PassNumUnq", "QNoUnq")
-embed.bert.id=embed.bert.id |> select("PassNumUnq", "QNoUnq")
-f.embed.merged.tag=bind_cols(embed.bert.id,f.embed.merged.tag)
 
-pca_embeddings_80_tag=bind_cols(embed.bert.id,pca_embeddings_80_tag)
-
-rm(embed.bert.id)
-
-
-```
-
-# Ridge regression
-
-## All variables except embeddings
-
-Turn average correct into easy, medium, hard buckets
-
-Generate three datasets: 1. Item charactersitics & language characteristics 2. Item characteristics only 3. Item charactersitics, embeddings & language characteristics
-
-```{r}
-### f.analysis, f.train, f.test - all vars except embeddings
-### f.analysis2 - without language metrics
-### f.analysis3 - everything
-### f.analysis4 - only embeddings
-### f.analysis.pca - PCA embeddings plus everything else
-#### Variable names
-### all embeddings
-
-
-### Merge embedding option 1
-f.with.embed= left_join(f, embed.bert) #f.embed.merged.tag
-f.with.embed= left_join(f.with.embed, pca_embeddings_80) #pca_embeddings_80_tag
-# f.with.embed= f.with.embed[1053,]
-
-vars = names(f.with.embed)
-vars.embed = vars[grep("embed", vars)]
-
-### item characteristics
-vars.fe=c("state", "year", "grade")
-#vars.fe=c()
-vars.chars= c("ques_text_highlight_yn","ques_text_ref_yn", "ques_order","pass_highlight_yn")
-vars.outcome=c("pVal.cons", "pVal.irt", "pVal.unadj")
-vars.id=c("PassNumUnq", "QNoUnq")
-vars.lang= setdiff(names(f.with.embed),
-                   c(vars.fe, vars.embed,vars.chars, vars.outcome, vars.id, vars.embed.pca))
-
-
-
-## Unadjusted results
-f.input= f.with.embed
-f.input$pVal= f.input$pVal.unadj
-
-
-#Models
-res_fe= fnc_reg_elasticNet(f.input,
-                             c("pVal", c("state", "grade", "year"))) # without language
-
-res_item= fnc_reg_elasticNet(f.input,
-                             c("pVal", c(vars.chars))) # without language metrics
-res_lang= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.lang))) ## everything except embedding
-res_item_embed= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.embed))) ## embeddings only
-
-# res_item_embed_pca= fnc_reg_elasticNet(f.input, 
-#                               c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
-
-res_item_all= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.chars,
-                                         vars.lang, vars.embed)))
-
-res_item_all_pca= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.chars,
-                                         vars.lang, vars.embed.pca)))
-
-
-res_unadj= bind_rows(res_fe, res_item, res_lang, res_item_embed, res_item_all, res_item_all_pca)
-
-res_unadj= round(res_unadj,2)
-res_unadj= bind_cols(type=rep("Unadjusted",nrow(res_unadj)),model=c("State, Grade, Year", "Only assessment characteristics ", "Only text analysis metrics", 
-"Only BERT embeddings", 
-"Assessment characteristics, text analysis metrics, & BERT embeddings", 
-"Assessment characteristics, text analysis metrics, & PCA on BERT embeddings"), res_unadj)
-
-#res_pca_results= bind_rows(res_lang_item_pcaembed, res_lang_item_pcaembed2)
-
-### IRT pvalues
-f.input= f.with.embed
-f.input$pVal= f.input$pVal.irt
-
-
-#Models
-res_fe= fnc_reg_elasticNet(f.input,
-                             c("pVal", c("state", "grade", "year")))
-res_item= fnc_reg_elasticNet(f.input,
-                             c("pVal", c(vars.chars))) # without language metrics
-res_lang= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.lang))) ## everything except embedding
-res_item_embed= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.embed))) ## embeddings only
-
-# res_item_embed_pca= fnc_reg_elasticNet(f.input, 
-#                               c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
-
-res_item_all= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.chars,
-                                         vars.lang, vars.embed)))
-
-res_item_all_pca= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.chars,
-                                         vars.lang, vars.embed.pca)))
-
-
-res_irt= bind_rows(res_fe, res_item, res_lang, res_item_embed, 
-                     res_item_all, res_item_all_pca)
-
-res_irt= round(res_irt,2)
-res_irt= bind_cols(type=rep("IRT",nrow(res_irt)),model=c("State, Grade, Year","Only item descriptives", "Only text analysis metrics", 
-"Only BERT embeddings", 
-"Item descriptions, text analysis metrics, & BERT embeddings", 
-"Item descriptions, text analysis metrics, & PCA on BERT embeddings"), res_irt)
-
-
-
-### Constant adjustment
-f.input= f.with.embed
-f.input$pVal= f.input$pVal.cons
-
-
-#Models
-
-res_fe= fnc_reg_elasticNet(f.input,
-                             c("pVal", c("state", "grade", "year")))
-
-
-res_item= fnc_reg_elasticNet(f.input,
-                             c("pVal", c(vars.chars))) # without language metrics
-res_lang= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.lang))) ## everything except embedding
-res_item_embed= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.embed))) ## embeddings only
-
-# res_item_embed_pca= fnc_reg_elasticNet(f.input, 
-#                               c("pVal",c(vars.fe,vars.embed.pca))) ## embeddings only
-
-res_item_all= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.chars,
-                                         vars.lang, vars.embed)))
-
-res_item_all_pca= fnc_reg_elasticNet(f.input, 
-                              c("pVal",c(vars.chars,
-                                         vars.lang, vars.embed.pca)))
-
-
-res_cons= bind_rows(res_fe,res_item, res_lang, res_item_embed, 
-                     res_item_all, res_item_all_pca)
-
-res_cons= round(res_cons,2)
-res_cons= bind_cols(type=rep("Cons",nrow(res_cons)),model=c("State, Grade, Year","Only item descriptives", "Only text analysis metrics", 
-"Only BERT embeddings", 
-"Item descriptions, text analysis metrics, & BERT embeddings", 
-"Item descriptions, text analysis metrics, & PCA on BERT embeddings"), res_cons)
-
-
-
-#View(res_cons)
-kable(res_unadj[,-1], format="latex")
-kable(res_cons[,-1], format="latex")
-kable(res_irt[,-1], format="latex")
-res= bind_rows(res_unadj, res_cons, res_irt) 
-
-write_csv(res, "Results/elasticnet_bert_oneset.csv")
-#write_csv(res, "Results/elasticnet_bert_oneset_1053.csv")
-# res = read_csv("Results/elasticnet_bert_oneset.csv")
-# kable(res[-1], format="latex")
+## cosine difference between question + distractors
 
 
 
 ```
 
-### Save model for Shiny
-
-```{r}
-
-  
-```
 
 
 
-### Alternate PCA embeddings
+
+### Ridge regresssion
 
 ```{r}
 
 
 
 ### Merge embedding option 1
+
+f.with.embed= f.with.embed |> na.omit()
+
 f.with.embed= left_join(f, f.embed.merged.tag) #f.embed.merged.tag
 f.with.embed= left_join(f.with.embed, pca_embeddings_80_tag) #pca_embeddings_80_tag
 
@@ -533,33 +669,8 @@ res2= read_csv("Results/elasticnet_bert_merged.csv")
 
 ```
 
-#### Alternate ridge with Llama
-
-```{r}
-#### Llama embeddings
-
-# write_csv(f, "Data/Data/Processed/file-1053items.csv")
-
-# glimpse(f)
 
 
-embed.llama= read_csv("Data/Embeddings/llama_embed.csv")
-embed.llama$perm= rep(1:24, 1053)
-embed.llama = embed.llama |> filter(perm==1) |> dplyr::select(-perm)
-
-names(embed.llama)= c(paste0("embed.llama", 1:4098))
-
-#embed.bert = embed.bert |> select(-id)
-
-
-### Alternate PCA embeddings
-pca_embeddings_80_llama= getpc(embed.llama)
-
-
-
-
-
-```
 
 ```{r}
 
@@ -711,7 +822,6 @@ write_csv(res, "Results/elasticnet_llama_oneset_1053.csv")
 
 ```
 
-
 ```{r}
 
 
@@ -741,8 +851,6 @@ bind_rows(res_bert_1053, res_llama_1053) |>
 
 
 ```
-
-
 
 Using caret – results are similar to using PCA directly
 

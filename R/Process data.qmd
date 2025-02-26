@@ -142,7 +142,7 @@ f= f |> mutate(state=if_else(str_detect(pdfname, "released-items"), "NY", "Texas
 table(f$PsgNum)
 f=f |> filter(!(PsgNum=="2, 3" | PsgNum=="3, 4" | PsgNum=="3 ,4"))
 table(f$PsgNum)
-
+f= f |> filter(!is.na(pVal))
 
 write_csv(f,"Data/Datacombined_clean.csv")
 
